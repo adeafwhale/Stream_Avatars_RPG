@@ -1,0 +1,826 @@
+enemyUsers = {};
+enemySpawnPoints = {};
+
+function defineEnemySpawns()
+    local points = {};
+    local app = getApp();
+    local res = app.getResolution();
+    
+    local spawnY = 20;
+    local screenWidth = res.x;
+    
+    -- Jakyl spawns
+    table.insert(points, {
+        type = 'jakyl',
+        enemyName = 'Enemy_Jakyl_1',
+        blockId = 657,
+        x = screenWidth * 0.15,
+        y = spawnY + 50,
+        hp = 50,
+        attack = 5,
+        defense = 2,
+        respawnTime = 60
+    });
+    
+    table.insert(points, {
+        type = 'jakyl',
+        enemyName = 'Enemy_Jakyl_2',
+        blockId = 656,
+        x = screenWidth * 0.3,
+        y = spawnY + 50,
+        hp = 50,
+        attack = 5,
+        defense = 2,
+        respawnTime = 60
+    });
+
+    enemySpawnPoints = points;
+    set('enemySpawnPoints', points);
+end
+
+function resolveEnemySpawnPosition(spawnPoint)
+    if spawnPoint == nil then
+        return nil, nil;
+    end
+
+    local level = getBackground();
+    if level == 'brothers_crossing' and spawnPoint.blockId ~= nil then
+        local blocks = getScriptableBlocks();
+        for _, block in pairs(blocks) do
+            if block.id == spawnPoint.blockId then
+                return block.position.x, block.position.y;
+            end
+        end
+    end
+
+    return spawnPoint.x, spawnPoint.y;
+end
+
+function getEnemySpawnPointByName(enemyName)
+    if enemyName == nil then
+        return nil;
+    end
+
+    for i, spawnPoint in ipairs(enemySpawnPoints) do
+        if spawnPoint.enemyName == enemyName then
+            return spawnPoint;
+        end
+    end
+
+    return nil;
+end
+
+function onAvatarSpawned(user)
+    if user == nil then
+        return;
+    end
+
+    if not isEnemyUser(user) then
+        return;
+    end
+
+    local spawnPoint = getEnemySpawnPointByName(user.displayName);
+    if spawnPoint == nil then
+        return;
+    end
+
+    local spawnX, spawnY = resolveEnemySpawnPosition(spawnPoint);
+    if spawnX ~= nil and spawnY ~= nil then
+        user.setPosition(spawnX, spawnY);
+    end
+end
+
+function maintainEnemyPositions()
+    while true do
+        yield();
+
+        local enemies = get('enemyUsers');
+        if enemies ~= nil and #enemies > 0 then
+            for _, enemyData in ipairs(enemies) do
+                local enemy = getUser(enemyData.enemyName);
+                if enemy ~= nil then
+                    local spawnPoint = enemySpawnPoints[enemyData.spawnPointIndex];
+                    local spawnX, spawnY = resolveEnemySpawnPosition(spawnPoint);
+                    if spawnX ~= nil and spawnY ~= nil then
+                        local pos = enemy.getPosition();
+                        if math.abs(pos.x - spawnX) > 5 or math.abs(pos.y - spawnY) > 5 then
+                            enemy.setPosition(spawnX, spawnY);
+                        end
+                    end
+                end
+            end
+        end
+
+        wait(0.5);
+    end
+end
+
+function spawnEnemyAt(spawnPointIndex)
+    local spawnPoint = enemySpawnPoints[spawnPointIndex];
+    if spawnPoint == nil then
+        return;
+    end
+    
+    -- Use the built-in spawn command
+    runCommand('!spawn ' .. spawnPoint.enemyName, true);
+    
+    wait(1);
+    
+    -- Get the spawned enemy
+    local enemyUser = getUser(spawnPoint.enemyName);
+    
+    if enemyUser == nil then
+        writeChat('ERROR: Could not find ' .. spawnPoint.enemyName);
+        return;
+    end
+
+    enemyUser.avatar = 'enemy_jakyl';
+    
+    -- Position the enemy
+    local spawnX, spawnY = resolveEnemySpawnPosition(spawnPoint);
+    if spawnX ~= nil and spawnY ~= nil then
+        enemyUser.setPosition(spawnX, spawnY);
+    end
+
+    -- Tag this user as an enemy (persists per user)
+    enemyUser.saveUserData('enemy_tag', {
+        isEnemy = true,
+        source = 'enemy_spawner'
+    });
+    
+    -- Store enemy data
+    local enemies = get('enemyUsers');
+    if enemies == nil then
+        enemies = {};
+    end
+    
+    table.insert(enemies, {
+        enemyName = spawnPoint.enemyName,
+        type = spawnPoint.type,
+        hp = spawnPoint.hp,
+        attack = spawnPoint.attack,
+        defense = spawnPoint.defense,
+        spawnPointIndex = spawnPointIndex,
+        respawnTime = spawnPoint.respawnTime,
+        lastCombatTime = 0
+    });
+    
+    set('enemyUsers', enemies);
+    
+    log('Spawned ' .. spawnPoint.type .. ': ' .. spawnPoint.enemyName);
+end
+
+function isEnemyUser(user)
+    if user == nil then
+        return false;
+    end
+
+    local tag = user.loadUserData('enemy_tag');
+    if tag ~= nil and tag.isEnemy == true then
+        return true;
+    end
+
+    return false;
+end
+
+function checkCombatProximity()
+    -- This runs continuously to check for combat
+    while true do
+        yield();
+        
+        local enemies = get('enemyUsers');
+        if enemies == nil or #enemies == 0 then
+            wait(1);
+        else
+            local allUsers = getUsers();
+            
+            for _, player in ipairs(allUsers) do
+                -- Skip enemies (tagged users)
+                if not isEnemyUser(player) then
+                    local playerPos = player.getPosition();
+                    
+                    for i, enemyData in ipairs(enemies) do
+                        local enemy = getUser(enemyData.enemyName);
+                        
+                        if enemy ~= nil then
+                            -- Skip enemies that are currently respawning
+                            if enemyData.isRespawning == true then
+                                goto continue;
+                            end
+                            
+                            -- Check combat cooldown (5 seconds between fights)
+                            local currentTime = os.time();
+                            local timeSinceCombat = currentTime - (enemyData.lastCombatTime or 0);
+                            
+                            if timeSinceCombat >= 5 then
+                                local enemyPos = enemy.getPosition();
+                                
+                                -- Calculate distance
+                                local dx = playerPos.x - enemyPos.x;
+                                local dy = playerPos.y - enemyPos.y;
+                                local distance = math.sqrt(dx * dx + dy * dy);
+                                
+                                -- If within 150 pixels, start walking toward player
+                                if distance < 150 and distance >= 10 then
+                                    -- Make enemy walk toward player
+                                    if playerPos.x > enemyPos.x then
+                                        enemy.runCommand('!walk');
+                                        enemy.look(1); -- Face right toward player
+                                    else
+                                        enemy.runCommand('!walk');
+                                        enemy.look(-1); -- Face left toward player
+                                    end
+                                end
+                                
+                                -- If within 10 pixels, start combat
+                                if distance < 110 then
+                                    -- Update combat timestamp and mark as in combat to prevent re-triggering
+                                    enemyData.lastCombatTime = currentTime;
+                                    enemyData.isRespawning = false;
+                                    enemies[i] = enemyData;
+                                    set('enemyUsers', enemies);
+                                    
+                                    startCombat(player, enemy, enemyData);
+                                    break;
+                                end
+                            end
+                        end
+                        
+                        ::continue::
+                    end
+                end
+            end
+            
+            wait(0.5);
+        end
+    end
+end
+
+function startCombat(player, enemy, enemyData)
+    -- Make avatars face each other
+    if player ~= nil and enemy ~= nil then
+        local playerPos = player.getPosition();
+        local enemyPos = enemy.getPosition();
+        
+        if playerPos ~= nil and enemyPos ~= nil then
+            -- If enemy is to the right of player, player faces right (1)
+            if enemyPos.x > playerPos.x then
+                player.look(1);
+            else
+                player.look(-1);
+            end
+            
+            -- Enemy faces opposite direction
+            if playerPos.x > enemyPos.x then
+                enemy.look(1);
+            else
+                enemy.look(-1);
+            end
+        end
+    end
+
+    local combatResult = runCombatBattle(player, enemy, enemyData);
+    if combatResult == nil then
+        return;
+    end
+
+    announceCombatSummary(combatResult);
+
+    if combatResult.outcome == 'player' then
+        onPlayerVictory(player, enemy, enemyData, combatResult);
+    elseif combatResult.outcome == 'enemy' then
+        onPlayerDefeat(player, enemy, enemyData, combatResult);
+    else
+        onCombatDraw(player, enemy, enemyData, combatResult);
+    end
+end
+
+function resolveUserByName(userName)
+    if userName == nil or userName == '' then
+        return nil;
+    end
+
+    local user = getUser(userName);
+    if user ~= nil then
+        return user;
+    end
+
+    local app = getApp();
+    return app.getUserFromData(userName);
+end
+
+function ensureBaseStats(data)
+    if data.attack == nil then data.attack = 0 end
+    if data.defense == nil then data.defense = 0 end
+    if data.gathering == nil then data.gathering = 0 end
+    if data.luck == nil then data.luck = 0 end
+    if data.health == nil then data.health = 100 end
+    if data.accuracy == nil then data.accuracy = 80 end
+    if data.dodge == nil then data.dodge = 5 end
+    return data
+end
+
+function getPlayerCombatStats(player)
+    local playerData = player.loadUserData('rpg_stats');
+    if playerData == nil then
+        playerData = {
+            attack = 0,
+            defense = 0,
+            gathering = 0,
+            luck = 0,
+            health = 100,
+            accuracy = 80,
+            dodge = 5
+        };
+    else
+        playerData = ensureBaseStats(playerData);
+    end
+
+    local equippedGear = player.getGear();
+    local gearBonus = {
+        attack = 0,
+        defense = 0,
+        gathering = 0,
+        luck = 0,
+        health = 0,
+        accuracy = 0,
+        dodge = 0
+    };
+
+    for slot, gearName in pairs(equippedGear) do
+        local itemStats = getGearStatsForCombat(gearName);
+        gearBonus.attack = gearBonus.attack + (itemStats.attack or 0);
+        gearBonus.defense = gearBonus.defense + (itemStats.defense or 0);
+        gearBonus.health = gearBonus.health + (itemStats.health or 0);
+        gearBonus.luck = gearBonus.luck + (itemStats.luck or 0);
+        gearBonus.accuracy = gearBonus.accuracy + (itemStats.accuracy or 0);
+        gearBonus.dodge = gearBonus.dodge + (itemStats.dodge or 0);
+    end
+
+    return {
+        attack = playerData.attack + gearBonus.attack,
+        defense = playerData.defense + gearBonus.defense,
+        health = playerData.health + gearBonus.health,
+        luck = playerData.luck + gearBonus.luck,
+        accuracy = playerData.accuracy + gearBonus.accuracy,
+        dodge = playerData.dodge + gearBonus.dodge
+    };
+end
+
+function getEnemyCombatStats(enemyData)
+    return {
+        attack = enemyData.attack or 0,
+        defense = enemyData.defense or 0,
+        health = enemyData.hp or 1,
+        luck = enemyData.luck or 0,
+        accuracy = enemyData.accuracy or 70,
+        dodge = enemyData.dodge or 5
+    };
+end
+
+function clampPercent(val)
+    if val < 5 then return 5 end
+    if val > 95 then return 95 end
+    return val
+end
+
+function resolveAttack(attackerStats, defenderStats)
+    local hitChance = clampPercent(attackerStats.accuracy - defenderStats.dodge);
+    local hitRoll = math.random(1, 100);
+    local hit = hitRoll <= hitChance;
+
+    local crit = false;
+    local damage = 0;
+
+    if hit then
+        local critChance = math.min(75, 5 + (attackerStats.luck * 2));
+        local critRoll = math.random(1, 100);
+        crit = critRoll <= critChance;
+
+        local baseDamage = math.max(1, attackerStats.attack - defenderStats.defense);
+        if crit then
+            local critMultiplier = 1.5 + (attackerStats.luck * 0.015);
+            damage = math.floor((baseDamage * critMultiplier) + 0.5);
+        else
+            damage = baseDamage;
+        end
+    end
+
+    return {
+        hit = hit,
+        crit = crit,
+        damage = damage,
+        hitChance = hitChance
+    };
+end
+
+function lockIfActive(user, pos)
+    if user == nil or pos == nil then
+        return;
+    end
+    if user.isActive == false then
+        return;
+    end
+    user.setPosition(pos.x, pos.y);
+end
+
+function runCombatBattle(player, enemy, enemyData)
+    if player == nil or enemyData == nil then
+        return nil;
+    end
+
+    local playerName = player.displayName;
+    local enemyName = enemyData.enemyName;
+
+    local playerStats = getPlayerCombatStats(player);
+    local enemyStats = getEnemyCombatStats(enemyData);
+
+    local playerHP = playerStats.health;
+    local enemyHP = enemyStats.health;
+
+    local playerPos = nil;
+    local enemyPos = nil;
+
+    local activePlayer = resolveUserByName(playerName);
+    if activePlayer ~= nil and activePlayer.isActive ~= false then
+        playerPos = activePlayer.getPosition();
+    end
+
+    local activeEnemy = resolveUserByName(enemyName);
+    if activeEnemy ~= nil and activeEnemy.isActive ~= false then
+        enemyPos = activeEnemy.getPosition();
+    end
+
+    local maxRounds = 5;
+    local rounds = 0;
+
+    local roundLog = {};
+    local stats = {
+        playerHits = 0,
+        playerMisses = 0,
+        playerCrits = 0,
+        playerDamage = 0,
+        enemyHits = 0,
+        enemyMisses = 0,
+        enemyCrits = 0,
+        enemyDamage = 0
+    };
+
+    for round = 1, maxRounds do
+        rounds = round;
+
+        local roundEntry = { round = round };
+
+        activePlayer = resolveUserByName(playerName);
+        activeEnemy = resolveUserByName(enemyName);
+        lockIfActive(activePlayer, playerPos);
+        lockIfActive(activeEnemy, enemyPos);
+
+        -- Player's turn: play attack animation
+        if activePlayer ~= nil and activePlayer.isActive ~= false then
+            activePlayer.runCommand('!swing');
+            wait(0.5); -- Wait for swing animation to play
+        end
+
+        local playerAttack = resolveAttack(playerStats, enemyStats);
+        if playerAttack.hit then
+            enemyHP = enemyHP - playerAttack.damage;
+            stats.playerHits = stats.playerHits + 1;
+            stats.playerDamage = stats.playerDamage + playerAttack.damage;
+        else
+            stats.playerMisses = stats.playerMisses + 1;
+        end
+
+        if playerAttack.crit then
+            stats.playerCrits = stats.playerCrits + 1;
+        end
+
+        roundEntry.player = playerAttack;
+
+        if enemyHP <= 0 then
+            table.insert(roundLog, roundEntry);
+            break;
+        end
+
+        wait(0.3);
+
+        activePlayer = resolveUserByName(playerName);
+        activeEnemy = resolveUserByName(enemyName);
+        lockIfActive(activePlayer, playerPos);
+        lockIfActive(activeEnemy, enemyPos);
+
+        -- Enemy's turn: play attack animation
+        if activeEnemy ~= nil and activeEnemy.isActive ~= false then
+            activeEnemy.runCommand('!bite');
+            wait(0.5); -- Wait for bite animation to play
+        end
+
+        local enemyAttack = resolveAttack(enemyStats, playerStats);
+        if enemyAttack.hit then
+            playerHP = playerHP - enemyAttack.damage;
+            stats.enemyHits = stats.enemyHits + 1;
+            stats.enemyDamage = stats.enemyDamage + enemyAttack.damage;
+        else
+            stats.enemyMisses = stats.enemyMisses + 1;
+        end
+
+        if enemyAttack.crit then
+            stats.enemyCrits = stats.enemyCrits + 1;
+        end
+
+        roundEntry.enemy = enemyAttack;
+        table.insert(roundLog, roundEntry);
+
+        if playerHP <= 0 then
+            break;
+        end
+
+        wait(0.1);
+    end
+
+    local outcome = 'enemy';
+    if playerHP <= 0 and enemyHP <= 0 then
+        outcome = 'draw';
+    elseif enemyHP <= 0 then
+        outcome = 'player';
+    elseif playerHP <= 0 then
+        outcome = 'enemy';
+    else
+        if playerHP > enemyHP then
+            outcome = 'player';
+        elseif enemyHP > playerHP then
+            outcome = 'enemy';
+        else
+            outcome = 'draw';
+        end
+    end
+
+    return {
+        outcome = outcome,
+        rounds = rounds,
+        playerName = playerName,
+        enemyName = enemyName,
+        enemyType = enemyData.type,
+        playerHP = math.max(0, playerHP),
+        enemyHP = math.max(0, enemyHP),
+        playerMaxHP = playerStats.health,
+        enemyMaxHP = enemyStats.health,
+        stats = stats,
+        roundsLog = roundLog
+    };
+end
+
+function formatAttackLine(label, attack)
+    if attack == nil then
+        return label .. ' did not act';
+    end
+
+    if not attack.hit then
+        return label .. ' missed';
+    end
+
+    if attack.crit then
+        return label .. ' crit for ' .. attack.damage;
+    end
+
+    return label .. ' hit for ' .. attack.damage;
+end
+
+function announceCombatSummary(result)
+    if result == nil then
+        return;
+    end
+
+    writeChat('⚔️ Battle Summary: ' .. result.playerName .. ' vs ' .. result.enemyType .. ' (' .. result.rounds .. ' rounds)');
+    writeChat('🧑 ' .. result.playerName .. ' HP: ' .. result.playerHP .. '/' .. result.playerMaxHP .. ' | Hits ' .. result.stats.playerHits .. ' Miss ' .. result.stats.playerMisses .. ' Crit ' .. result.stats.playerCrits .. ' Dmg ' .. result.stats.playerDamage);
+    writeChat('👹 ' .. result.enemyType .. ' HP: ' .. result.enemyHP .. '/' .. result.enemyMaxHP .. ' | Hits ' .. result.stats.enemyHits .. ' Miss ' .. result.stats.enemyMisses .. ' Crit ' .. result.stats.enemyCrits .. ' Dmg ' .. result.stats.enemyDamage);
+
+    for i, roundEntry in ipairs(result.roundsLog) do
+        local playerLine = formatAttackLine('P', roundEntry.player);
+        local enemyLine = formatAttackLine('E', roundEntry.enemy);
+        writeChat('R' .. roundEntry.round .. ': ' .. playerLine .. ' | ' .. enemyLine);
+    end
+
+    if result.outcome == 'player' then
+        writeChat('🏆 Winner: ' .. result.playerName);
+    elseif result.outcome == 'enemy' then
+        writeChat('🏆 Winner: ' .. result.enemyType);
+    else
+        writeChat('🤝 Result: Draw');
+    end
+end
+
+function getGearStatsForCombat(gearName)
+    if gearName == nil or gearName == '' or gearName == 'none' then
+        return { attack = 0, defense = 0, health = 0, luck = 0, accuracy = 0, dodge = 0 };
+    end
+    
+    local stats = { attack = 0, defense = 0, health = 0, luck = 0, accuracy = 0, dodge = 0 };
+    
+    local rarityBonus = 0;
+    if string.find(gearName, 'common') then
+        rarityBonus = 1;
+    elseif string.find(gearName, 'uncommon') then
+        rarityBonus = 2;
+    elseif string.find(gearName, 'rare') then
+        rarityBonus = 3;
+    elseif string.find(gearName, 'epic') then
+        rarityBonus = 5;
+    elseif string.find(gearName, 'legendary') then
+        rarityBonus = 8;
+    elseif string.find(gearName, 'mythic') then
+        rarityBonus = 12;
+    elseif string.find(gearName, 'special') then
+        rarityBonus = 10;
+    end
+    
+    if string.find(gearName, 'weapon_') then
+        stats.attack = rarityBonus;
+        if string.find(gearName, 'claymore') then
+            stats.attack = stats.attack + 2;
+        elseif string.find(gearName, 'shield') then
+            stats.defense = rarityBonus;
+            stats.attack = 0;
+        end
+    elseif string.find(gearName, 'tool_') then
+        -- Tools don't help in combat
+    elseif string.find(gearName, 'outfit_') then
+        stats.defense = rarityBonus;
+        stats.health = rarityBonus * 10;
+    elseif string.find(gearName, 'head_') then
+        stats.defense = math.floor(rarityBonus / 2);
+        stats.luck = rarityBonus;
+    elseif string.find(gearName, 'pet_') then
+        stats.attack = math.floor(rarityBonus / 2);
+        stats.luck = rarityBonus;
+    end
+    
+    return stats;
+end
+
+function onPlayerVictory(player, enemy, enemyData, combatResult)
+    local goldReward = 0;
+    
+    if enemyData.type == 'jakyl' then
+        goldReward = 25;
+    elseif enemyData.type == 'soldier' then
+        goldReward = 50;
+    elseif enemyData.type == 'elite' then
+        goldReward = 100;
+    end
+    
+    local success, newBalance = addCurrency(player, goldReward);
+    if success then
+        writeChat('💰 ' .. player.displayName .. ' earned ' .. goldReward .. ' gold!');
+    end
+    
+    -- Play built-in death/respawn via explode for visual effect
+    if enemy ~= nil then
+        runCommand('!explode ' .. enemyData.enemyName, true);
+    end
+    
+    -- Mark enemy as respawning to prevent re-engagement
+    local enemies = get('enemyUsers');
+    if enemies ~= nil then
+        for i, e in ipairs(enemies) do
+            if e.enemyName == enemyData.enemyName then
+                e.isRespawning = true;
+                enemies[i] = e;
+                set('enemyUsers', enemies);
+                break;
+            end
+        end
+    end
+    
+    -- Start respawn timer in async to avoid blocking combat
+    set('respawn_enemy_index', enemyData.spawnPointIndex);
+    set('respawn_enemy_delay', enemyData.respawnTime);
+    set('respawn_enemy_name', enemyData.enemyName);
+    async('respawnEnemyAfterDelay');
+end
+
+function onPlayerDefeat(player, enemy, enemyData, combatResult)
+    -- Play built-in death/respawn via explode for defeated player
+    if player ~= nil then
+        runCommand('!explode ' .. player.displayName, true);
+    end
+    
+    -- Mark enemy as respawning (even though they won, prevent re-engagement for cooldown)
+    local enemies = get('enemyUsers');
+    if enemies ~= nil then
+        for i, e in ipairs(enemies) do
+            if e.enemyName == enemyData.enemyName then
+                e.isRespawning = true;
+                e.lastCombatTime = os.time();
+                enemies[i] = e;
+                set('enemyUsers', enemies);
+                break;
+            end
+        end
+    end
+    
+    -- Brief respawn timer even on victory to prevent immediate re-engagement
+    set('respawn_enemy_index', enemyData.spawnPointIndex);
+    set('respawn_enemy_delay', 10); -- 10 second cooldown after defeating player
+    set('respawn_enemy_name', enemyData.enemyName);
+    async('respawnEnemyAfterDelay');
+end
+
+function onCombatDraw(player, enemy, enemyData, combatResult)
+    if player ~= nil then
+        runCommand('!explode ' .. player.displayName, true);
+    end
+    if enemyData ~= nil and enemyData.enemyName ~= nil then
+        runCommand('!explode ' .. enemyData.enemyName, true);
+    end
+    
+    -- Mark enemy as respawning
+    local enemies = get('enemyUsers');
+    if enemies ~= nil then
+        for i, e in ipairs(enemies) do
+            if e.enemyName == enemyData.enemyName then
+                e.isRespawning = true;
+                e.lastCombatTime = os.time();
+                enemies[i] = e;
+                set('enemyUsers', enemies);
+                break;
+            end
+        end
+    end
+    
+    -- Respawn both after draw
+    set('respawn_enemy_index', enemyData.spawnPointIndex);
+    set('respawn_enemy_delay', 10); -- 10 second cooldown after draw
+    set('respawn_enemy_name', enemyData.enemyName);
+    async('respawnEnemyAfterDelay');
+end
+
+function respawnEnemyAfterDelay()
+    local spawnIndex = get('respawn_enemy_index');
+    local delay = get('respawn_enemy_delay');
+    local enemyName = get('respawn_enemy_name');
+    
+    if spawnIndex == nil or delay == nil then
+        return;
+    end
+    
+    wait(delay);
+    
+    -- Remove respawning flag and re-enable for combat
+    local enemies = get('enemyUsers');
+    if enemies ~= nil then
+        for i, e in ipairs(enemies) do
+            if e.enemyName == enemyName then
+                e.isRespawning = false;
+                enemies[i] = e;
+                set('enemyUsers', enemies);
+                break;
+            end
+        end
+    end
+    
+    -- Now spawn the enemy at the designated location
+    local spawnPoint = enemySpawnPoints[spawnIndex];
+    if spawnPoint ~= nil then
+        local spawnX, spawnY = resolveEnemySpawnPosition(spawnPoint);
+        if spawnX ~= nil and spawnY ~= nil then
+            local respawnedEnemy = getUser(enemyName);
+            if respawnedEnemy ~= nil then
+                respawnedEnemy.setPosition(spawnX, spawnY);
+                writeChat('⚔️ ' .. spawnPoint.type .. ' has respawned!');
+            end
+        end
+    end
+end
+
+return function()
+    writeChat('👹 Enemy Spawner: ONLINE');
+    wait(0.1);
+
+    -- DEBUG: log background and scriptable blocks
+    local level = getBackground();
+    log('DEBUG: current background=' .. level);
+    local scriptBlocks = getScriptableBlocks();
+    if scriptBlocks ~= nil then
+        for _, block in pairs(scriptBlocks) do
+            log('DEBUG: block id=' .. block.id .. ' pos=' .. block.position.x .. ',' .. block.position.y);
+        end
+    end
+    
+    defineEnemySpawns();
+    
+    wait(1);
+    
+    -- Spawn all enemies
+    for i = 1, #enemySpawnPoints do
+        spawnEnemyAt(i);
+        wait(0.5);
+    end
+    
+    writeChat('✅ All enemies spawned!');
+    
+    -- Start combat proximity checker
+    async('checkCombatProximity');
+    
+    keepAlive();
+end
