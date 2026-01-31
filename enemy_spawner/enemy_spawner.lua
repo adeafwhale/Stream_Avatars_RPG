@@ -221,14 +221,26 @@ function checkCombatProximity()
                                 local distance = math.sqrt(dx * dx + dy * dy);
                                 
                                 -- If within 150 pixels, start walking toward player
-                                if distance < 150 and distance >= 10 then
-                                    -- Make enemy walk toward player
+                                if distance < 150 and distance >= 110 then
+                                    -- Make enemy walk toward player and both face each other
                                     if playerPos.x > enemyPos.x then
                                         enemy.runCommand('!walk');
                                         enemy.look(1); -- Face right toward player
+                                        player.look(-1); -- Player faces left toward enemy
                                     else
                                         enemy.runCommand('!walk');
                                         enemy.look(-1); -- Face left toward player
+                                        player.look(1); -- Player faces right toward enemy
+                                    end
+                                elseif distance < 110 and distance >= 10 then
+                                    -- Close enough - stop walking but keep facing each other
+                                    enemy.runCommand('!idle');
+                                    if playerPos.x > enemyPos.x then
+                                        enemy.look(1);
+                                        player.look(-1);
+                                    else
+                                        enemy.look(-1);
+                                        player.look(1);
                                     end
                                 end
                                 
