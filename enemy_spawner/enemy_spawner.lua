@@ -25,7 +25,7 @@ function displayCombatResult(defender, result)
             displayText = 'MISS';
         end
     elseif result.crit then
-        displayText = '⭐ CRIT! ' .. result.damage;
+        displayText = 'CRIT! ' .. result.damage;
     else
         displayText = result.damage;
     end
@@ -250,8 +250,8 @@ function checkCombatProximity()
                                 local dy = playerPos.y - enemyPos.y;
                                 local distance = math.sqrt(dx * dx + dy * dy);
                                 
-                                -- If within 150 pixels, start walking toward player
-                                if distance < 150 and distance >= 110 then
+                                -- If within 190 pixels, start walking toward player
+                                if distance < 190 and distance >= 150 then
                                     -- Make enemy walk toward player and both face each other
                                     if playerPos.x > enemyPos.x then
                                         enemy.runCommand('!walk');
@@ -262,7 +262,7 @@ function checkCombatProximity()
                                         enemy.look(-1); -- Face left toward player
                                         player.look(1); -- Player faces right toward enemy
                                     end
-                                elseif distance < 110 and distance >= 10 then
+                                elseif distance < 150 and distance >= 10 then
                                     -- Close enough - stop walking but keep facing each other
                                     enemy.runCommand('!idle');
                                     if playerPos.x > enemyPos.x then
@@ -274,8 +274,8 @@ function checkCombatProximity()
                                     end
                                 end
                                 
-                                -- If within 10 pixels, start combat
-                                if distance < 110 then
+                                -- If within 90 pixels, start combat
+                                if distance < 90 then
                                     -- Update combat timestamp and mark as in combat to prevent re-triggering
                                     enemyData.lastCombatTime = currentTime;
                                     enemyData.isRespawning = false;
@@ -510,6 +510,67 @@ function lockIfActive(user, pos)
     user.setPosition(pos.x, pos.y);
 end
 
+function getAttackStandoffDistance()
+    return 90;
+end
+
+function prepareForAttack(attacker, defender)
+    if attacker == nil or defender == nil then
+        return;
+    end
+
+    local attackerPos = attacker.getPosition();
+    local defenderPos = defender.getPosition();
+
+    if attackerPos == nil or defenderPos == nil then
+        return;
+    end
+
+    local dx = defenderPos.x - attackerPos.x;
+    local distance = math.abs(dx);
+    local targetDistance = getAttackStandoffDistance();
+
+    if distance == targetDistance then
+        return;
+    end
+
+    local newX = attackerPos.x;
+    if dx > 0 then
+        newX = defenderPos.x - targetDistance;
+    else
+        newX = defenderPos.x + targetDistance;
+    end
+
+    attacker.setPosition(newX, attackerPos.y);
+    wait(0.05);
+end
+
+function normalizeCombatPositions(player, enemy, playerPos, enemyPos)
+    if playerPos == nil or enemyPos == nil then
+        return playerPos, enemyPos;
+    end
+
+    local targetDistance = getAttackStandoffDistance();
+    local dx = enemyPos.x - playerPos.x;
+
+    if dx == 0 then
+        dx = 1;
+    end
+
+    local desiredEnemyX = playerPos.x + (dx > 0 and targetDistance or -targetDistance);
+    enemyPos = { x = desiredEnemyX, y = enemyPos.y };
+
+    if player ~= nil and player.isActive ~= false then
+        player.setPosition(playerPos.x, playerPos.y);
+    end
+
+    if enemy ~= nil and enemy.isActive ~= false then
+        enemy.setPosition(enemyPos.x, enemyPos.y);
+    end
+
+    return playerPos, enemyPos;
+end
+
 function runCombatBattle(player, enemy, enemyData)
     if player == nil or enemyData == nil then
         return nil;
@@ -536,6 +597,8 @@ function runCombatBattle(player, enemy, enemyData)
     if activeEnemy ~= nil and activeEnemy.isActive ~= false then
         enemyPos = activeEnemy.getPosition();
     end
+
+    playerPos, enemyPos = normalizeCombatPositions(activePlayer, activeEnemy, playerPos, enemyPos);
 
     local maxRounds = 5;
     local rounds = 0;
