@@ -48,8 +48,8 @@ function defineEnemySpawns()
         x = screenWidth * 0.15,
         y = spawnY + 50,
         hp = 30,
-        attack = 5,
-        defense = 2,
+        attack = 6,
+        defense = 1,
         respawnTime = 15
     });
     
@@ -60,8 +60,8 @@ function defineEnemySpawns()
         x = screenWidth * 0.3,
         y = spawnY + 50,
         hp = 30,
-        attack = 5,
-        defense = 2,
+        attack = 6,
+        defense = 1,
         respawnTime = 15
     });
 
@@ -230,7 +230,13 @@ function checkCombatProximity()
                 if not isEnemyUser(player) then
                     local playerPos = player.getPosition();
                     
-                    for i, enemyData in ipairs(enemies) do
+                    -- Check if player is on combat cooldown after losing/timing out
+                    local currentTime = os.time();
+                    local playerCombatCooldown = player.loadUserData('player_combat_cooldown');
+                    local timeSinceLastCombat = currentTime - (playerCombatCooldown or 0);
+                    
+                    if timeSinceLastCombat >= 62 then
+                        for i, enemyData in ipairs(enemies) do
                         local enemy = getUser(enemyData.enemyName);
                         
                         if enemy ~= nil then
@@ -290,6 +296,7 @@ function checkCombatProximity()
                         end
                         
                         ::continue::
+                    end
                     end
                 end
             end
@@ -765,11 +772,11 @@ function getGearStatsForCombat(gearName)
     
     local rarityBonus = 0;
     if string.find(gearName, 'common') then
-        rarityBonus = 1;
-    elseif string.find(gearName, 'uncommon') then
         rarityBonus = 2;
-    elseif string.find(gearName, 'rare') then
+    elseif string.find(gearName, 'uncommon') then
         rarityBonus = 3;
+    elseif string.find(gearName, 'rare') then
+        rarityBonus = 4;
     elseif string.find(gearName, 'epic') then
         rarityBonus = 5;
     elseif string.find(gearName, 'legendary') then
@@ -788,7 +795,7 @@ function getGearStatsForCombat(gearName)
     elseif string.find(gearName, 'claymore') then
         -- Claymore gives very high attack, no defense
         stats.attack = (rarityBonus * 5) + 3;
-    elseif string.find(gearName, 'weapon_') then
+    elseif string.find(gearName, 'spear_and_shield') then
         stats.attack = rarityBonus * 5;
         if string.find(gearName, 'claymore') then
             stats.attack = stats.attack + 3;
@@ -804,7 +811,7 @@ function getGearStatsForCombat(gearName)
     elseif string.find(gearName, 'head_') then
         stats.defense = math.floor(rarityBonus / 2);
         stats.luck = rarityBonus;
-    elseif string.find(gearName, 'pet_') then
+    elseif string.find(gearName, 'croaklin') then
         -- Pets only influence luck, but give double the rarity bonus
         stats.luck = rarityBonus * 2;
     end
@@ -853,6 +860,15 @@ function onPlayerDefeat(player, enemy, enemyData, combatResult)
     -- Play built-in death/respawn via explode for defeated player
     if player ~= nil then
         runCommand('!explode ' .. player.displayName, true);
+        
+        -- Wait for explosion to complete before changing to ghost
+        wait(2);
+        
+        -- Convert player to ghost form (60 second duration)
+        player.setTemporaryAvatar('ghost', 60);
+        
+        -- Set 62 second cooldown (60 for ghost + 2 second grace period after returning)
+        player.saveUserData('player_combat_cooldown', os.time());
     end
     
     -- Mark enemy as respawning (even though they won, prevent re-engagement for cooldown)

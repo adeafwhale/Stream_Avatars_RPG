@@ -8,13 +8,14 @@ function getGearStats(gearName)
     
     local stats = { attack = 0, defense = 0, gathering = 0, luck = 0, health = 0, accuracy = 0, dodge = 0 };
     
+    -- Determine rarity bonus based on item name
     local rarityBonus = 0;
     if string.find(gearName, 'common') then
-        rarityBonus = 1;
-    elseif string.find(gearName, 'uncommon') then
         rarityBonus = 2;
-    elseif string.find(gearName, 'rare') then
+    elseif string.find(gearName, 'uncommon') then
         rarityBonus = 3;
+    elseif string.find(gearName, 'rare') then
+        rarityBonus = 4;
     elseif string.find(gearName, 'epic') then
         rarityBonus = 5;
     elseif string.find(gearName, 'legendary') then
@@ -25,7 +26,7 @@ function getGearStats(gearName)
         rarityBonus = 10;
     end
     
-    -- Check specific weapon types first
+    -- Check specific weapon types first (by name for special mechanics)
     if string.find(gearName, 'spear_and_shield') or string.find(gearName, 'spear') then
         -- Spear and shield gives balanced attack and defense (80% of weapon attack)
         stats.attack = math.floor(rarityBonus * 5 * 0.8);
@@ -33,7 +34,7 @@ function getGearStats(gearName)
     elseif string.find(gearName, 'claymore') then
         -- Claymore gives very high attack, no defense
         stats.attack = (rarityBonus * 5) + 3;
-    elseif string.find(gearName, 'weapon_') then
+    elseif string.find(gearName, 'spear_and_shield') then
         stats.attack = rarityBonus * 5;
         if string.find(gearName, 'claymore') then
             stats.attack = stats.attack + 3;
@@ -49,7 +50,7 @@ function getGearStats(gearName)
     elseif string.find(gearName, 'head_') then
         stats.luck = rarityBonus;
         stats.defense = math.floor(rarityBonus / 2);
-    elseif string.find(gearName, 'pet_') then
+    elseif string.find(gearName, 'croaklin') then
         -- Pets only influence luck, but give double the rarity bonus
         stats.luck = rarityBonus * 2;
     end
