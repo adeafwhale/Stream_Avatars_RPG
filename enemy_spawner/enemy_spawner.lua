@@ -50,7 +50,7 @@ function defineEnemySpawns()
         hp = 30,
         attack = 5,
         defense = 2,
-        respawnTime = 60
+        respawnTime = 15
     });
     
     table.insert(points, {
@@ -62,7 +62,7 @@ function defineEnemySpawns()
         hp = 30,
         attack = 5,
         defense = 2,
-        respawnTime = 60
+        respawnTime = 15
     });
 
     enemySpawnPoints = points;
@@ -233,7 +233,7 @@ function checkCombatProximity()
                         local enemy = getUser(enemyData.enemyName);
                         
                         if enemy ~= nil then
-                            -- Skip enemies that are currently respawning
+                            -- Skip enemies that are currently respawning or in combat
                             if enemyData.isRespawning == true then
                                 goto continue;
                             end
@@ -276,9 +276,9 @@ function checkCombatProximity()
                                 
                                 -- If within 90 pixels, start combat
                                 if distance < 90 then
-                                    -- Update combat timestamp and mark as in combat to prevent re-triggering
+                                    -- Mark enemy as in combat IMMEDIATELY to prevent other players from engaging
+                                    enemyData.isRespawning = true;
                                     enemyData.lastCombatTime = currentTime;
-                                    enemyData.isRespawning = false;
                                     enemies[i] = enemyData;
                                     set('enemyUsers', enemies);
                                     
@@ -600,7 +600,7 @@ function runCombatBattle(player, enemy, enemyData)
 
     playerPos, enemyPos = normalizeCombatPositions(activePlayer, activeEnemy, playerPos, enemyPos);
 
-    local maxRounds = 5;
+    local maxRounds = 8;
     local rounds = 0;
 
     local roundLog = {};
@@ -870,7 +870,7 @@ function onPlayerDefeat(player, enemy, enemyData, combatResult)
     
     -- Brief respawn timer even on victory to prevent immediate re-engagement
     set('respawn_enemy_index', enemyData.spawnPointIndex);
-    set('respawn_enemy_delay', 10); -- 10 second cooldown after defeating player
+    set('respawn_enemy_delay', 5); -- 5 second cooldown after defeating player
     set('respawn_enemy_name', enemyData.enemyName);
     async('respawnEnemyAfterDelay');
 end
