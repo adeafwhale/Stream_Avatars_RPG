@@ -47,8 +47,8 @@ function defineEnemySpawns()
         blockId = 657,
         x = screenWidth * 0.15,
         y = spawnY + 50,
-        hp = 30,
-        attack = 6,
+        hp = 35,
+        attack = 12,
         defense = 1,
         respawnTime = 15
     });
@@ -59,8 +59,8 @@ function defineEnemySpawns()
         blockId = 656,
         x = screenWidth * 0.3,
         y = spawnY + 50,
-        hp = 30,
-        attack = 6,
+        hp = 35,
+        attack = 12,
         defense = 1,
         respawnTime = 15
     });
@@ -364,7 +364,7 @@ function ensureBaseStats(data)
     if data.defense == nil then data.defense = 0 end
     if data.gathering == nil then data.gathering = 0 end
     if data.luck == nil then data.luck = 0 end
-    if data.health == nil then data.health = 100 end
+    if data.health == nil then data.health = 50 end
     if data.accuracy == nil then data.accuracy = 80 end
     if data.dodge == nil then data.dodge = 5 end
     return data
@@ -378,7 +378,7 @@ function getPlayerCombatStats(player)
             defense = 0,
             gathering = 0,
             luck = 0,
-            health = 100,
+            health = 50,
             accuracy = 80,
             dodge = 5
         };
@@ -608,7 +608,7 @@ function runCombatBattle(player, enemy, enemyData)
 
     playerPos, enemyPos = normalizeCombatPositions(activePlayer, activeEnemy, playerPos, enemyPos);
 
-    local maxRounds = 8;
+    local maxRounds = 10;
     local rounds = 0;
 
     local roundLog = {};
@@ -789,8 +789,8 @@ function getGearStatsForCombat(gearName)
     
     -- Check specific weapon types first
     if string.find(gearName, 'spear_and_shield') or string.find(gearName, 'spear') then
-        -- Spear and shield gives balanced attack and defense (80% of weapon attack)
-        stats.attack = math.floor(rarityBonus * 5 * 0.8);
+        -- Spear and shield gives balanced attack and defense (70% of weapon attack)
+        stats.attack = math.floor(rarityBonus * 5 * 0.7);
         stats.defense = math.floor(rarityBonus * 0.7);
     elseif string.find(gearName, 'claymore') then
         -- Claymore gives very high attack, no defense
@@ -830,6 +830,9 @@ function onPlayerVictory(player, enemy, enemyData, combatResult)
     local goldReward = baseGold + luckBonus;
     
     local success, newBalance = addCurrency(player, goldReward);
+    if player ~= nil then
+        writeChat('🧪 DEBUG: ' .. player.displayName .. ' earned ' .. goldReward .. ' hex.');
+    end
     
     -- Play built-in death/respawn via explode for visual effect
     if enemy ~= nil then

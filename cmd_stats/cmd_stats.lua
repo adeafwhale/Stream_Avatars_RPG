@@ -78,7 +78,7 @@ function showStatsForUser(targetUser)
             defense = 0,
             gathering = 0,
             luck = 0,
-            health = 100,
+            health = 50,
             accuracy = 80,
             dodge = 5
         };
@@ -88,7 +88,7 @@ function showStatsForUser(targetUser)
         if playerData.defense == nil then playerData.defense = 0 end
         if playerData.gathering == nil then playerData.gathering = 0 end
         if playerData.luck == nil then playerData.luck = 0 end
-        if playerData.health == nil then playerData.health = 100 end
+        if playerData.health == nil or playerData.health > 50 then playerData.health = 50 end
         if playerData.accuracy == nil then playerData.accuracy = 80 end
         if playerData.dodge == nil then playerData.dodge = 5 end
         targetUser.saveUserData('rpg_stats', playerData);
