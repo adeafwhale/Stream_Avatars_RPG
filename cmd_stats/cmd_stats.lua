@@ -20,21 +20,29 @@ function getGearStats(gearName)
     elseif string.find(gearName, 'legendary') then
         rarityBonus = 8;
     elseif string.find(gearName, 'mythic') then
-        rarityBonus = 10;
+        rarityBonus = 12;
     elseif string.find(gearName, 'special') then
-        rarityBonus = 6;
+        rarityBonus = 10;
     end
     
-    if string.find(gearName, 'weapon_') then
-        stats.attack = rarityBonus;
+    -- Check specific weapon types first
+    if string.find(gearName, 'spear_and_shield') or string.find(gearName, 'spear') then
+        -- Spear and shield gives balanced attack and defense (80% of weapon attack)
+        stats.attack = math.floor(rarityBonus * 5 * 0.8);
+        stats.defense = math.floor(rarityBonus * 0.7);
+    elseif string.find(gearName, 'claymore') then
+        -- Claymore gives very high attack, no defense
+        stats.attack = (rarityBonus * 5) + 3;
+    elseif string.find(gearName, 'weapon_') then
+        stats.attack = rarityBonus * 5;
         if string.find(gearName, 'claymore') then
-            stats.attack = stats.attack + 2;
+            stats.attack = stats.attack + 3;
         elseif string.find(gearName, 'shield') then
             stats.defense = rarityBonus;
             stats.attack = 0;
         end
     elseif string.find(gearName, 'tool_') then
-        stats.gathering = rarityBonus;
+        stats.gathering = 0;
     elseif string.find(gearName, 'outfit_') then
         stats.defense = rarityBonus;
         stats.health = rarityBonus * 10;
@@ -42,8 +50,8 @@ function getGearStats(gearName)
         stats.luck = rarityBonus;
         stats.defense = math.floor(rarityBonus / 2);
     elseif string.find(gearName, 'pet_') then
-        stats.luck = rarityBonus;
-        stats.attack = math.floor(rarityBonus / 2);
+        -- Pets only influence luck, but give double the rarity bonus
+        stats.luck = rarityBonus * 2;
     end
     
     return stats;

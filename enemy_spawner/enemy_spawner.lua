@@ -47,7 +47,7 @@ function defineEnemySpawns()
         blockId = 657,
         x = screenWidth * 0.15,
         y = spawnY + 50,
-        hp = 50,
+        hp = 30,
         attack = 5,
         defense = 2,
         respawnTime = 60
@@ -59,7 +59,7 @@ function defineEnemySpawns()
         blockId = 656,
         x = screenWidth * 0.3,
         y = spawnY + 50,
-        hp = 50,
+        hp = 30,
         attack = 5,
         defense = 2,
         respawnTime = 60
@@ -712,13 +712,8 @@ function runCombatBattle(player, enemy, enemyData)
     elseif playerHP <= 0 then
         outcome = 'enemy';
     else
-        if playerHP > enemyHP then
-            outcome = 'player';
-        elseif enemyHP > playerHP then
-            outcome = 'enemy';
-        else
-            outcome = 'draw';
-        end
+        -- If time runs out, enemy wins by default
+        outcome = 'enemy';
     end
 
     return {
@@ -784,10 +779,18 @@ function getGearStatsForCombat(gearName)
         rarityBonus = 10;
     end
     
-    if string.find(gearName, 'weapon_') then
-        stats.attack = rarityBonus;
+    -- Check specific weapon types first
+    if string.find(gearName, 'spear_and_shield') or string.find(gearName, 'spear') then
+        -- Spear and shield gives balanced attack and defense (80% of weapon attack)
+        stats.attack = math.floor(rarityBonus * 5 * 0.8);
+        stats.defense = math.floor(rarityBonus * 0.7);
+    elseif string.find(gearName, 'claymore') then
+        -- Claymore gives very high attack, no defense
+        stats.attack = (rarityBonus * 5) + 3;
+    elseif string.find(gearName, 'weapon_') then
+        stats.attack = rarityBonus * 5;
         if string.find(gearName, 'claymore') then
-            stats.attack = stats.attack + 2;
+            stats.attack = stats.attack + 3;
         elseif string.find(gearName, 'shield') then
             stats.defense = rarityBonus;
             stats.attack = 0;
@@ -801,8 +804,8 @@ function getGearStatsForCombat(gearName)
         stats.defense = math.floor(rarityBonus / 2);
         stats.luck = rarityBonus;
     elseif string.find(gearName, 'pet_') then
-        stats.attack = math.floor(rarityBonus / 2);
-        stats.luck = rarityBonus;
+        -- Pets only influence luck, but give double the rarity bonus
+        stats.luck = rarityBonus * 2;
     end
     
     return stats;
