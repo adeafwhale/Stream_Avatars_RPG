@@ -1,6 +1,37 @@
 enemyUsers = {};
 enemySpawnPoints = {};
 
+function flashDamageEffect(user, effectType)
+    if user == nil then
+        return;
+    end
+    
+    if effectType == 'damage' then
+        user.setTemporaryColor('white', 0.25);
+    end
+end
+
+function displayCombatResult(defender, result)
+    if defender == nil or result == nil then
+        return;
+    end
+    
+    local displayText = '';
+    
+    if not result.hit then
+        if result.dodged == true then
+            displayText = 'DODGE';
+        else
+            displayText = 'MISS';
+        end
+    elseif result.crit then
+        displayText = '⭐ CRIT! ' .. result.damage;
+    else
+        displayText = result.damage;
+    end
+    
+    defender.chatBubble(displayText);
+end
 function defineEnemySpawns()
     local points = {};
     local app = getApp();
@@ -130,7 +161,6 @@ function spawnEnemyAt(spawnPointIndex)
     local enemyUser = getUser(spawnPoint.enemyName);
     
     if enemyUser == nil then
-        writeChat('ERROR: Could not find ' .. spawnPoint.enemyName);
         return;
     end
 
@@ -167,7 +197,7 @@ function spawnEnemyAt(spawnPointIndex)
     
     set('enemyUsers', enemies);
     
-    log('Spawned ' .. spawnPoint.type .. ': ' .. spawnPoint.enemyName);
+    
 end
 
 function isEnemyUser(user)
@@ -391,9 +421,42 @@ function getEnemyCombatStats(enemyData)
 end
 
 function clampPercent(val)
+
     if val < 5 then return 5 end
     if val > 95 then return 95 end
     return val
+end
+
+function flashDamageEffect(user, effectType)
+    if user == nil then
+        return;
+    end
+
+    if effectType == 'damage' then
+        user.setTemporaryColor('white', 0.25);
+    end
+end
+
+function displayCombatResult(defender, result)
+    if defender == nil or result == nil then
+        return;
+    end
+
+    local displayText = '';
+
+    if not result.hit then
+        if result.dodged == true then
+            displayText = 'DODGE';
+        else
+            displayText = 'MISS';
+        end
+    elseif result.crit then
+        displayText = '⭐ CRIT! ' .. result.damage;
+    else
+        displayText = result.damage;
+    end
+
+    defender.chatBubble(displayText);
 end
 
 function resolveAttack(attackerStats, defenderStats)
@@ -403,6 +466,7 @@ function resolveAttack(attackerStats, defenderStats)
 
     local crit = false;
     local damage = 0;
+    local dodged = false;
 
     if hit then
         local critChance = math.min(75, 5 + (attackerStats.luck * 2));
@@ -418,11 +482,21 @@ function resolveAttack(attackerStats, defenderStats)
         end
     end
 
+    if not hit then
+        local accuracyValue = attackerStats.accuracy or 0;
+        if hitRoll > accuracyValue then
+            dodged = false;
+        else
+            dodged = (defenderStats.dodge or 0) > 0;
+        end
+    end
+
     return {
         hit = hit,
         crit = crit,
         damage = damage,
-        hitChance = hitChance
+        hitChance = hitChance,
+        dodged = dodged
     };
 end
 
@@ -509,6 +583,14 @@ function runCombatBattle(player, enemy, enemyData)
 
         roundEntry.player = playerAttack;
 
+        -- Visual feedback for player's attack
+        if activeEnemy ~= nil and activeEnemy.isActive ~= false then
+            if playerAttack.hit then
+                flashDamageEffect(activeEnemy, 'damage');
+            end
+            displayCombatResult(activeEnemy, playerAttack);
+        end
+
         if enemyHP <= 0 then
             table.insert(roundLog, roundEntry);
             break;
@@ -541,6 +623,15 @@ function runCombatBattle(player, enemy, enemyData)
         end
 
         roundEntry.enemy = enemyAttack;
+
+        -- Visual feedback for enemy's attack
+        if activePlayer ~= nil and activePlayer.isActive ~= false then
+            if enemyAttack.hit then
+                flashDamageEffect(activePlayer, 'damage');
+            end
+            displayCombatResult(activePlayer, enemyAttack);
+        end
+
         table.insert(roundLog, roundEntry);
 
         if playerHP <= 0 then
@@ -603,23 +694,7 @@ function announceCombatSummary(result)
         return;
     end
 
-    writeChat('⚔️ Battle Summary: ' .. result.playerName .. ' vs ' .. result.enemyType .. ' (' .. result.rounds .. ' rounds)');
-    writeChat('🧑 ' .. result.playerName .. ' HP: ' .. result.playerHP .. '/' .. result.playerMaxHP .. ' | Hits ' .. result.stats.playerHits .. ' Miss ' .. result.stats.playerMisses .. ' Crit ' .. result.stats.playerCrits .. ' Dmg ' .. result.stats.playerDamage);
-    writeChat('👹 ' .. result.enemyType .. ' HP: ' .. result.enemyHP .. '/' .. result.enemyMaxHP .. ' | Hits ' .. result.stats.enemyHits .. ' Miss ' .. result.stats.enemyMisses .. ' Crit ' .. result.stats.enemyCrits .. ' Dmg ' .. result.stats.enemyDamage);
-
-    for i, roundEntry in ipairs(result.roundsLog) do
-        local playerLine = formatAttackLine('P', roundEntry.player);
-        local enemyLine = formatAttackLine('E', roundEntry.enemy);
-        writeChat('R' .. roundEntry.round .. ': ' .. playerLine .. ' | ' .. enemyLine);
-    end
-
-    if result.outcome == 'player' then
-        writeChat('🏆 Winner: ' .. result.playerName);
-    elseif result.outcome == 'enemy' then
-        writeChat('🏆 Winner: ' .. result.enemyType);
-    else
-        writeChat('🤝 Result: Draw');
-    end
+    
 end
 
 function getGearStatsForCombat(gearName)
@@ -671,20 +746,16 @@ function getGearStatsForCombat(gearName)
 end
 
 function onPlayerVictory(player, enemy, enemyData, combatResult)
-    local goldReward = 0;
+    -- Base gold range: 3-6
+    local baseGold = math.random(3, 6);
     
-    if enemyData.type == 'jakyl' then
-        goldReward = 25;
-    elseif enemyData.type == 'soldier' then
-        goldReward = 50;
-    elseif enemyData.type == 'elite' then
-        goldReward = 100;
-    end
+    -- Get player's luck stat to influence loot
+    local playerStats = getPlayerCombatStats(player);
+    local luckBonus = math.floor(playerStats.luck * 0.5); -- 0.5 gold per luck point
+    
+    local goldReward = baseGold + luckBonus;
     
     local success, newBalance = addCurrency(player, goldReward);
-    if success then
-        writeChat('💰 ' .. player.displayName .. ' earned ' .. goldReward .. ' gold!');
-    end
     
     -- Play built-in death/respawn via explode for visual effect
     if enemy ~= nil then
@@ -799,7 +870,7 @@ function respawnEnemyAfterDelay()
             local respawnedEnemy = getUser(enemyName);
             if respawnedEnemy ~= nil then
                 respawnedEnemy.setPosition(spawnX, spawnY);
-                writeChat('⚔️ ' .. spawnPoint.type .. ' has respawned!');
+                
             end
         end
     end
@@ -809,15 +880,7 @@ return function()
     writeChat('👹 Enemy Spawner: ONLINE');
     wait(0.1);
 
-    -- DEBUG: log background and scriptable blocks
-    local level = getBackground();
-    log('DEBUG: current background=' .. level);
-    local scriptBlocks = getScriptableBlocks();
-    if scriptBlocks ~= nil then
-        for _, block in pairs(scriptBlocks) do
-            log('DEBUG: block id=' .. block.id .. ' pos=' .. block.position.x .. ',' .. block.position.y);
-        end
-    end
+    
     
     defineEnemySpawns();
     
@@ -829,7 +892,7 @@ return function()
         wait(0.5);
     end
     
-    writeChat('✅ All enemies spawned!');
+    
     
     -- Start combat proximity checker
     async('checkCombatProximity');
