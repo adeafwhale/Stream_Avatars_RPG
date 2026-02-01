@@ -164,7 +164,8 @@ function spawnEnemyAt(spawnPointIndex)
         return;
     end
 
-    enemyUser.avatar = 'enemy_jakyl';
+    -- Use setTemporaryAvatar to bypass ownership check (set to 0 for permanent until app restart)
+    enemyUser.setTemporaryAvatar('enemy_jakyl', 0);
     
     -- Position the enemy
     local spawnX, spawnY = resolveEnemySpawnPosition(spawnPoint);
