@@ -64,6 +64,19 @@ function defineEnemySpawns()
         defense = 1,
         respawnTime = 15
     });
+    
+    -- Alpha Jakyl spawn (20% stronger stats for next tier gear)
+    table.insert(points, {
+        type = 'alpha_jakyl',
+        enemyName = 'Enemy_Alpha_Jakyl_1',
+        blockId = 655,
+        x = screenWidth * 0.45,
+        y = spawnY + 50,
+        hp = 50,
+        attack = 16,
+        defense = 2,
+        respawnTime = 15
+    });
 
     enemySpawnPoints = points;
     set('enemySpawnPoints', points);
@@ -165,7 +178,11 @@ function spawnEnemyAt(spawnPointIndex)
     end
 
     -- Use setTemporaryAvatar to bypass ownership check (set to 0 for permanent until app restart)
-    enemyUser.setTemporaryAvatar('enemy_jakyl', 0);
+    if spawnPoint.type == 'alpha_jakyl' then
+        enemyUser.setTemporaryAvatar('enemy_alpha_jakyl', 0);
+    else
+        enemyUser.setTemporaryAvatar('enemy_jakyl', 0);
+    end
     
     -- Position the enemy
     local spawnX, spawnY = resolveEnemySpawnPosition(spawnPoint);
@@ -830,9 +847,6 @@ function onPlayerVictory(player, enemy, enemyData, combatResult)
     local goldReward = baseGold + luckBonus;
     
     local success, newBalance = addCurrency(player, goldReward);
-    if player ~= nil then
-        writeChat('🧪 DEBUG: ' .. player.displayName .. ' earned ' .. goldReward .. ' hex.');
-    end
     
     -- Play built-in death/respawn via explode for visual effect
     if enemy ~= nil then
@@ -935,6 +949,12 @@ function respawnEnemyAfterDelay()
     
     wait(delay);
     
+    -- Check if we're still on the correct background before respawning
+    local currentBackground = getBackground();
+    if currentBackground ~= 'brothers_crossing' then
+        return; -- Don't respawn if we switched backgrounds
+    end
+    
     -- Remove respawning flag and re-enable for combat
     local enemies = get('enemyUsers');
     if enemies ~= nil then
@@ -962,23 +982,112 @@ function respawnEnemyAfterDelay()
     end
 end
 
-return function()
-    writeChat('👹 Enemy Spawner: ONLINE');
-    wait(0.1);
-
+function despawnAllEnemies()
+    writeChat('🐛 DEBUG: despawnAllEnemies() called');
     
+    -- Check if already despawning to prevent concurrent calls
+    local isCurrentlyDespawning = get('despawning_in_progress');
+    if isCurrentlyDespawning then
+        writeChat('🐛 DEBUG: Already despawning, skipping...');
+        return; -- Already despawning, skip
+    end
+    
+    local enemies = get('enemyUsers');
+    if enemies == nil or #enemies == 0 then
+        writeChat('🐛 DEBUG: No enemies to despawn');
+        return; -- Nothing to despawn
+    end
+    
+    writeChat('🐛 DEBUG: Starting despawn of ' .. #enemies .. ' enemies');
+    
+    -- Set flag to prevent concurrent despawn operations
+    set('despawning_in_progress', true);
+    
+    local app = getApp();
+    
+    -- Clear the enemy list first to prevent respawn timers from re-adding them
+    set('enemyUsers', {});
+    
+    -- Delete the users completely
+    for _, enemyData in ipairs(enemies) do
+        local enemy = getUser(enemyData.enemyName);
+        if enemy ~= nil then
+            app.deleteUser(enemy);
+        end
+    end
+    
+    writeChat('🐛 DEBUG: Despawn complete');
+    
+    -- Clear the flag
+    set('despawning_in_progress', false);
+end
+
+function spawnAllEnemies()
+    writeChat('🐛 DEBUG: spawnAllEnemies() called');
+    
+    -- Check if already spawning to prevent concurrent calls
+    local isCurrentlySpawning = get('spawning_in_progress');
+    if isCurrentlySpawning then
+        writeChat('🐛 DEBUG: Already spawning, skipping...');
+        return;
+    end
+    
+    -- Check if enemies are already spawned
+    local enemies = get('enemyUsers');
+    if enemies ~= nil and #enemies > 0 then
+        writeChat('🐛 DEBUG: Enemies already spawned (' .. #enemies .. '), skipping...');
+        return; -- Already spawned, don't spawn again
+    end
+    
+    -- Set flag to prevent concurrent spawn operations
+    set('spawning_in_progress', true);
     
     defineEnemySpawns();
-    
     wait(1);
     
-    -- Spawn all enemies
+    writeChat('👹 Enemy Spawner: Spawning enemies...');
     for i = 1, #enemySpawnPoints do
         spawnEnemyAt(i);
         wait(0.5);
     end
+    writeChat('🐛 DEBUG: Spawn complete');
     
+    -- Clear the flag
+    set('spawning_in_progress', false);
+end
+
+function onBackgroundSwitch(user, backgroundName)
+    writeChat('🐛 DEBUG: Background switched to: ' .. backgroundName);
     
+    if backgroundName == 'brothers_crossing' then
+        -- Correct background - spawn enemies if not already spawned
+        spawnAllEnemies();
+    else
+        -- Wrong background - despawn all enemies
+        despawnAllEnemies();
+    end
+end
+
+return function()
+    -- Guard against re-initialization on background change
+    if get('enemy_spawner_initialized') then
+        return;
+    end
+    set('enemy_spawner_initialized', true);
+    
+    writeChat('👹 Enemy Spawner: ONLINE');
+    wait(0.1);
+
+    -- Check if we're on the correct background
+    local currentBackground = getBackground();
+    if currentBackground ~= 'brothers_crossing' then
+        writeChat('⚠️ Enemy Spawner: Wrong background (' .. currentBackground .. '). Enemies require brothers_crossing.');
+    else
+        spawnAllEnemies();
+    end
+    
+    -- Register background switch event
+    addEvent('backgroundSwitch', 'onBackgroundSwitch');
     
     -- Start combat proximity checker
     async('checkCombatProximity');
