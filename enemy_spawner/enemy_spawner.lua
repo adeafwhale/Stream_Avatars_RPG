@@ -95,6 +95,7 @@ function resolveEnemySpawnPosition(spawnPoint)
                 return block.position.x, block.position.y;
             end
         end
+        return nil, nil;
     end
 
     return spawnPoint.x, spawnPoint.y;
@@ -123,11 +124,16 @@ function onAvatarSpawned(user)
         return;
     end
 
+    if getBackground() ~= 'brothers_crossing' then
+        return;
+    end
+
     local spawnPoint = getEnemySpawnPointByName(user.displayName);
     if spawnPoint == nil then
         return;
     end
 
+    wait(0.15);
     local spawnX, spawnY = resolveEnemySpawnPosition(spawnPoint);
     if spawnX ~= nil and spawnY ~= nil then
         user.setPosition(spawnX, spawnY);
@@ -1076,6 +1082,9 @@ return function()
     
     -- Register background switch event
     addEvent('backgroundSwitch', 'onBackgroundSwitch');
+
+    -- Reposition enemies after their avatar finishes initial spawn
+    addEvent('spawn', 'onAvatarSpawned');
     
     -- Start combat proximity checker
     async('checkCombatProximity');
