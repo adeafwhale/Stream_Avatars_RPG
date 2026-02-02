@@ -177,6 +177,13 @@ function spawnEnemyAt(spawnPointIndex)
         return;
     end
 
+    -- Tag this user as an enemy IMMEDIATELY (persists per user)
+    -- Do this BEFORE changing avatar so other enemies don't detect it as a player
+    enemyUser.saveUserData('enemy_tag', {
+        isEnemy = true,
+        source = 'enemy_spawner'
+    });
+
     -- Use setTemporaryAvatar to bypass ownership check (set to 0 for permanent until app restart)
     if spawnPoint.type == 'alpha_jakyl' then
         enemyUser.setTemporaryAvatar('enemy_alpha_jakyl', 0);
@@ -189,12 +196,6 @@ function spawnEnemyAt(spawnPointIndex)
     if spawnX ~= nil and spawnY ~= nil then
         enemyUser.setPosition(spawnX, spawnY);
     end
-
-    -- Tag this user as an enemy (persists per user)
-    enemyUser.saveUserData('enemy_tag', {
-        isEnemy = true,
-        source = 'enemy_spawner'
-    });
     
     -- Store enemy data
     local enemies = get('enemyUsers');
@@ -324,27 +325,48 @@ function checkCombatProximity()
 end
 
 function startCombat(player, enemy, enemyData)
-    -- Make avatars face each other
-    if player ~= nil and enemy ~= nil then
-        local playerPos = player.getPosition();
-        local enemyPos = enemy.getPosition();
-        
-        if playerPos ~= nil and enemyPos ~= nil then
-            -- If enemy is to the right of player, player faces right (1)
-            if enemyPos.x > playerPos.x then
-                player.look(1);
-            else
-                player.look(-1);
-            end
-            
-            -- Enemy faces opposite direction
-            if playerPos.x > enemyPos.x then
-                enemy.look(1);
-            else
-                enemy.look(-1);
-            end
-        end
+    -- Get initial positions
+    local playerPos = player.getPosition();
+    local enemyPos = enemy.getPosition();
+    
+    if playerPos == nil or enemyPos == nil then
+        return;
     end
+    
+    -- Calculate target distance (90 pixels apart)
+    local targetDistance = getAttackStandoffDistance();
+    local dx = enemyPos.x - playerPos.x;
+    
+    -- Determine facing directions based on relative position
+    local playerFacing = (dx > 0) and 1 or -1;  -- Face right if enemy is to the right
+    local enemyFacing = -playerFacing;           -- Enemy faces opposite
+    
+    -- Calculate final positions with correct standoff distance
+    local midX = (playerPos.x + enemyPos.x) / 2;
+    local finalPlayerX = midX - (targetDistance / 2);
+    local finalEnemyX = midX + (targetDistance / 2);
+    
+    -- Ensure correct direction (player on left, enemy on right, OR vice versa)
+    if dx < 0 then
+        -- Enemy is to the left of player, swap positions
+        finalPlayerX, finalEnemyX = finalEnemyX, finalPlayerX;
+    end
+    
+    -- Stop any walking animations
+    player.runCommand('!idle');
+    enemy.runCommand('!idle');
+    
+    -- Set positions ONCE
+    player.setPosition(finalPlayerX, playerPos.y);
+    enemy.setPosition(finalEnemyX, enemyPos.y);
+    
+    wait(0.1);  -- Brief pause for positions to settle
+    
+    -- Set facing directions ONCE
+    player.look(playerFacing);
+    enemy.look(enemyFacing);
+    
+    wait(0.1);  -- Brief pause for facing to settle
 
     local combatResult = runCombatBattle(player, enemy, enemyData);
     if combatResult == nil then
@@ -610,21 +632,6 @@ function runCombatBattle(player, enemy, enemyData)
     local playerHP = playerStats.health;
     local enemyHP = enemyStats.health;
 
-    local playerPos = nil;
-    local enemyPos = nil;
-
-    local activePlayer = resolveUserByName(playerName);
-    if activePlayer ~= nil and activePlayer.isActive ~= false then
-        playerPos = activePlayer.getPosition();
-    end
-
-    local activeEnemy = resolveUserByName(enemyName);
-    if activeEnemy ~= nil and activeEnemy.isActive ~= false then
-        enemyPos = activeEnemy.getPosition();
-    end
-
-    playerPos, enemyPos = normalizeCombatPositions(activePlayer, activeEnemy, playerPos, enemyPos);
-
     local maxRounds = 10;
     local rounds = 0;
 
@@ -645,10 +652,8 @@ function runCombatBattle(player, enemy, enemyData)
 
         local roundEntry = { round = round };
 
-        activePlayer = resolveUserByName(playerName);
-        activeEnemy = resolveUserByName(enemyName);
-        lockIfActive(activePlayer, playerPos);
-        lockIfActive(activeEnemy, enemyPos);
+        local activePlayer = resolveUserByName(playerName);
+        local activeEnemy = resolveUserByName(enemyName);
 
         -- Player's turn: play attack animation
         if activePlayer ~= nil and activePlayer.isActive ~= false then
@@ -688,8 +693,6 @@ function runCombatBattle(player, enemy, enemyData)
 
         activePlayer = resolveUserByName(playerName);
         activeEnemy = resolveUserByName(enemyName);
-        lockIfActive(activePlayer, playerPos);
-        lockIfActive(activeEnemy, enemyPos);
 
         -- Enemy's turn: play attack animation
         if activeEnemy ~= nil and activeEnemy.isActive ~= false then
@@ -983,22 +986,16 @@ function respawnEnemyAfterDelay()
 end
 
 function despawnAllEnemies()
-    writeChat('🐛 DEBUG: despawnAllEnemies() called');
-    
     -- Check if already despawning to prevent concurrent calls
     local isCurrentlyDespawning = get('despawning_in_progress');
     if isCurrentlyDespawning then
-        writeChat('🐛 DEBUG: Already despawning, skipping...');
         return; -- Already despawning, skip
     end
     
     local enemies = get('enemyUsers');
     if enemies == nil or #enemies == 0 then
-        writeChat('🐛 DEBUG: No enemies to despawn');
         return; -- Nothing to despawn
     end
-    
-    writeChat('🐛 DEBUG: Starting despawn of ' .. #enemies .. ' enemies');
     
     -- Set flag to prevent concurrent despawn operations
     set('despawning_in_progress', true);
@@ -1016,26 +1013,20 @@ function despawnAllEnemies()
         end
     end
     
-    writeChat('🐛 DEBUG: Despawn complete');
-    
     -- Clear the flag
     set('despawning_in_progress', false);
 end
 
 function spawnAllEnemies()
-    writeChat('🐛 DEBUG: spawnAllEnemies() called');
-    
     -- Check if already spawning to prevent concurrent calls
     local isCurrentlySpawning = get('spawning_in_progress');
     if isCurrentlySpawning then
-        writeChat('🐛 DEBUG: Already spawning, skipping...');
         return;
     end
     
     -- Check if enemies are already spawned
     local enemies = get('enemyUsers');
     if enemies ~= nil and #enemies > 0 then
-        writeChat('🐛 DEBUG: Enemies already spawned (' .. #enemies .. '), skipping...');
         return; -- Already spawned, don't spawn again
     end
     
@@ -1050,15 +1041,12 @@ function spawnAllEnemies()
         spawnEnemyAt(i);
         wait(0.5);
     end
-    writeChat('🐛 DEBUG: Spawn complete');
     
     -- Clear the flag
     set('spawning_in_progress', false);
 end
 
 function onBackgroundSwitch(user, backgroundName)
-    writeChat('🐛 DEBUG: Background switched to: ' .. backgroundName);
-    
     if backgroundName == 'brothers_crossing' then
         -- Correct background - spawn enemies if not already spawned
         spawnAllEnemies();
