@@ -1,0 +1,5 @@
+{
+  "name": "Resource Gatherer System",
+  "description": "Spawns and manages resources as avatars for gathering with harvest animations",
+  "version": "1.0.0"
+}
