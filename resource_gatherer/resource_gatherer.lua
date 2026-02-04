@@ -186,7 +186,7 @@ function hasToolEquipped(user)
     end
 
     for _, itemName in pairs(equippedGear) do
-        if type(itemName) == 'string' and string.find(itemName, 'tool_') ~= nil then
+        if type(itemName) == 'string' and string.find(itemName, 'tools_') ~= nil then
             return true;
         end
     end
