@@ -79,7 +79,7 @@ function defineEnemySpawns()
     });
 
     enemySpawnPoints = points;
-    set('enemySpawnPoints', points);
+    set('dungeonEnemySpawnPoints', points);
 end
 
 function resolveEnemySpawnPosition(spawnPoint)
@@ -88,7 +88,7 @@ function resolveEnemySpawnPosition(spawnPoint)
     end
 
     local level = getBackground();
-    if level == 'brothers_crossing' and spawnPoint.blockId ~= nil then
+    if level == 'dungeon_01' and spawnPoint.blockId ~= nil then
         local blocks = getScriptableBlocks();
         for _, block in pairs(blocks) do
             if block.id == spawnPoint.blockId then
@@ -124,7 +124,7 @@ function onAvatarSpawned(user)
         return;
     end
 
-    if getBackground() ~= 'brothers_crossing' then
+    if getBackground() ~= 'dungeon_01' then
         return;
     end
 
@@ -144,7 +144,7 @@ function maintainEnemyPositions()
     while true do
         yield();
 
-        local enemies = get('enemyUsers');
+        local enemies = get('dungeonEnemyUsers');
         if enemies ~= nil and #enemies > 0 then
             for _, enemyData in ipairs(enemies) do
                 local enemy = getUser(enemyData.enemyName);
@@ -185,9 +185,9 @@ function spawnEnemyAt(spawnPointIndex)
 
     -- Tag this user as an enemy IMMEDIATELY (persists per user)
     -- Do this BEFORE changing avatar so other enemies don't detect it as a player
-    enemyUser.saveUserData('enemy_tag', {
+    enemyUser.saveUserData('dungeon_enemy_tag', {
         isEnemy = true,
-        source = 'enemy_spawner'
+        source = 'dungeon_01_spawner'
     });
 
     -- Use setTemporaryAvatar to bypass ownership check (set to 0 for permanent until app restart)
@@ -204,7 +204,7 @@ function spawnEnemyAt(spawnPointIndex)
     end
     
     -- Store enemy data
-    local enemies = get('enemyUsers');
+    local enemies = get('dungeonEnemyUsers');
     if enemies == nil then
         enemies = {};
     end
@@ -220,7 +220,7 @@ function spawnEnemyAt(spawnPointIndex)
         lastCombatTime = 0
     });
     
-    set('enemyUsers', enemies);
+    set('dungeonEnemyUsers', enemies);
     
     
 end
@@ -230,21 +230,8 @@ function isEnemyUser(user)
         return false;
     end
 
-    local tag = user.loadUserData('enemy_tag');
+    local tag = user.loadUserData('dungeon_enemy_tag');
     if tag ~= nil and tag.isEnemy == true then
-        return true;
-    end
-
-    return false;
-end
-
-function isResourceUser(user)
-    if user == nil then
-        return false;
-    end
-
-    local tag = user.loadUserData('resource_tag');
-    if tag ~= nil and tag.isResource == true then
         return true;
     end
 
@@ -256,20 +243,20 @@ function checkCombatProximity()
     while true do
         yield();
         
-        local enemies = get('enemyUsers');
+        local enemies = get('dungeonEnemyUsers');
         if enemies == nil or #enemies == 0 then
             wait(1);
         else
             local allUsers = getUsers();
             
             for _, player in ipairs(allUsers) do
-                -- Skip enemies (tagged users) and resources
-                if not isEnemyUser(player) and not isResourceUser(player) then
+                -- Skip enemies (tagged users)
+                if not isEnemyUser(player) then
                     local playerPos = player.getPosition();
                     
                     -- Check if player is on combat cooldown after losing/timing out
                     local currentTime = os.time();
-                    local playerCombatCooldown = player.loadUserData('player_combat_cooldown');
+                    local playerCombatCooldown = player.loadUserData('dungeon_combat_cooldown');
                     local timeSinceLastCombat = currentTime - (playerCombatCooldown or 0);
                     
                     if timeSinceLastCombat >= 62 then
@@ -287,12 +274,6 @@ function checkCombatProximity()
                             local timeSinceCombat = currentTime - (enemyData.lastCombatTime or 0);
                             
                             if timeSinceCombat >= 5 then
-                                                                -- Check if player is currently harvesting
-                                                                local isHarvesting = player.loadUserData('is_harvesting');
-                                                                if isHarvesting == true then
-                                                                    goto continue; -- Don't initiate combat if player is harvesting
-                                                                end
-                                
                                 local enemyPos = enemy.getPosition();
                                 
                                 -- Calculate distance
@@ -330,7 +311,7 @@ function checkCombatProximity()
                                     enemyData.isRespawning = true;
                                     enemyData.lastCombatTime = currentTime;
                                     enemies[i] = enemyData;
-                                    set('enemyUsers', enemies);
+                                    set('dungeonEnemyUsers', enemies);
                                     
                                     startCombat(player, enemy, enemyData);
                                     break;
@@ -350,9 +331,6 @@ function checkCombatProximity()
 end
 
 function startCombat(player, enemy, enemyData)
-    -- Mark player as in combat
-    player.saveUserData('in_combat', true);
-    
     -- Get initial positions
     local playerPos = player.getPosition();
     local enemyPos = enemy.getPosition();
@@ -438,94 +416,6 @@ function ensureBaseStats(data)
     if data.accuracy == nil then data.accuracy = 80 end
     if data.dodge == nil then data.dodge = 5 end
     return data
-end
-
-function ensureInventory(user)
-    if user == nil then
-        return nil;
-    end
-
-    local inventory = user.loadUserData('rpg_inventory');
-    if inventory == nil then
-        inventory = {
-            wood = 0,
-            stone = 0,
-            ore = 0,
-            fiber = 0,
-            fish = 0,
-            potion_small = 0,
-            potion_medium = 0,
-            potion_large = 0
-        };
-        user.saveUserData('rpg_inventory', inventory);
-        return inventory;
-    end
-
-    if inventory.wood == nil then inventory.wood = 0 end
-    if inventory.stone == nil then inventory.stone = 0 end
-    if inventory.ore == nil then inventory.ore = 0 end
-    if inventory.fiber == nil then inventory.fiber = 0 end
-    if inventory.fish == nil then inventory.fish = 0 end
-    if inventory.potion_small == nil then inventory.potion_small = 0 end
-    if inventory.potion_medium == nil then inventory.potion_medium = 0 end
-    if inventory.potion_large == nil then inventory.potion_large = 0 end
-
-    return inventory;
-end
-
-function selectPotionForSurvival(inventory, requiredHeal)
-    if inventory == nil or requiredHeal == nil or requiredHeal <= 0 then
-        return nil;
-    end
-
-    local options = {
-        { key = 'potion_small', heal = 25 },
-        { key = 'potion_medium', heal = 50 },
-        { key = 'potion_large', heal = 100 }
-    };
-
-    local best = nil;
-    for _, opt in ipairs(options) do
-        if (inventory[opt.key] or 0) > 0 and opt.heal >= requiredHeal then
-            if best == nil or opt.heal < best.heal then
-                best = opt;
-            end
-        end
-    end
-
-    return best;
-end
-
-function useSurvivalPotion(player, currentHP, maxHP)
-    if player == nil or currentHP == nil or maxHP == nil then
-        return 0;
-    end
-
-    if currentHP > 0 then
-        return 0;
-    end
-
-    local requiredHeal = 1 - currentHP;
-    local inventory = ensureInventory(player);
-    local potion = selectPotionForSurvival(inventory, requiredHeal);
-    if potion == nil then
-        return 0;
-    end
-
-    inventory[potion.key] = (inventory[potion.key] or 0) - 1;
-    if inventory[potion.key] < 0 then inventory[potion.key] = 0 end
-    player.saveUserData('rpg_inventory', inventory);
-
-    local newHP = math.min(maxHP, currentHP + potion.heal);
-    local actualHealed = newHP - currentHP;
-
-    if player ~= nil and player.isActive ~= false and actualHealed > 0 then
-        player.runCommand('!heal');
-        player.chatBubble('+' .. actualHealed .. ' HP');
-        wait(1.0);
-    end
-
-    return actualHealed;
 end
 
 function getPlayerCombatStats(player)
@@ -751,7 +641,7 @@ function runCombatBattle(player, enemy, enemyData)
     local playerHP = playerStats.health;
     local enemyHP = enemyStats.health;
 
-    local maxRounds = 20;
+    local maxRounds = 10;
     local rounds = 0;
 
     local roundLog = {};
@@ -777,7 +667,7 @@ function runCombatBattle(player, enemy, enemyData)
         -- Player's turn: play attack animation
         if activePlayer ~= nil and activePlayer.isActive ~= false then
             activePlayer.runCommand('!swing');
-            wait(1.0); -- Wait for swing animation to play
+            wait(0.5); -- Wait for swing animation to play
         end
 
         local playerAttack = resolveAttack(playerStats, enemyStats);
@@ -819,24 +709,11 @@ function runCombatBattle(player, enemy, enemyData)
             wait(0.5); -- Wait for bite animation to play
         end
 
-        -- Player plays block animation in response
-        if activePlayer ~= nil and activePlayer.isActive ~= false then
-            activePlayer.runCommand('!block');
-            wait(1.0); -- Wait for block animation to play
-        end
-
         local enemyAttack = resolveAttack(enemyStats, playerStats);
         if enemyAttack.hit then
             playerHP = playerHP - enemyAttack.damage;
             stats.enemyHits = stats.enemyHits + 1;
             stats.enemyDamage = stats.enemyDamage + enemyAttack.damage;
-
-            -- If this hit would be fatal, use a potion to survive (minimum waste)
-            if playerHP <= 0 then
-                local potionUser = activePlayer ~= nil and activePlayer or player;
-                local healed = useSurvivalPotion(potionUser, playerHP, playerStats.health);
-                playerHP = playerHP + healed;
-            end
         else
             stats.enemyMisses = stats.enemyMisses + 1;
         end
@@ -917,10 +794,10 @@ end
 
 function getGearStatsForCombat(gearName)
     if gearName == nil or gearName == '' or gearName == 'none' then
-        return { attack = 0, defense = 0, health = 0, luck = 0, accuracy = 0, dodge = 0, block = 0 };
+        return { attack = 0, defense = 0, health = 0, luck = 0, accuracy = 0, dodge = 0 };
     end
     
-    local stats = { attack = 0, defense = 0, health = 0, luck = 0, accuracy = 0, dodge = 0, block = 0 };
+    local stats = { attack = 0, defense = 0, health = 0, luck = 0, accuracy = 0, dodge = 0 };
     
     local rarityBonus = 0;
     if string.find(gearName, 'common') then
@@ -940,15 +817,10 @@ function getGearStatsForCombat(gearName)
     end
     
     -- Check specific weapon types first
-    if string.find(gearName, 'spear_and_shield') then
-        -- Spear and shield gives balanced attack, defense, and block capability
+    if string.find(gearName, 'spear_and_shield') or string.find(gearName, 'spear') then
+        -- Spear and shield gives balanced attack and defense (70% of weapon attack)
         stats.attack = math.floor(rarityBonus * 5 * 0.7);
         stats.defense = math.floor(rarityBonus * 0.7);
-        stats.block = rarityBonus;
-    elseif string.find(gearName, 'spear') then
-        -- Regular spear gives attack and some block
-        stats.attack = math.floor(rarityBonus * 5 * 0.7);
-        stats.block = math.floor(rarityBonus * 0.5);
     elseif string.find(gearName, 'claymore') then
         -- Claymore gives very high attack, no defense
         stats.attack = (rarityBonus * 5) + 3;
@@ -976,48 +848,6 @@ function getGearStatsForCombat(gearName)
     return stats;
 end
 
-function incrementEnemyDefeatCounter(enemyData)
-    -- Only count regular enemies (not alpha)
-    if enemyData.type == 'jakyl' then
-        local stats = get('enemy_defeat_stats');
-        if stats == nil then
-            stats = { regular_defeated = 0, alpha_defeated = 0 };
-        end
-        stats.regular_defeated = (stats.regular_defeated or 0) + 1;
-        set('enemy_defeat_stats', stats);
-    elseif enemyData.type == 'alpha_jakyl' then
-        local stats = get('enemy_defeat_stats');
-        if stats == nil then
-            stats = { regular_defeated = 0, alpha_defeated = 0 };
-        end
-        stats.alpha_defeated = (stats.alpha_defeated or 0) + 1;
-        set('enemy_defeat_stats', stats);
-    end
-end
-
-function displayEnemyDefeatCounter()
-    while true do
-        yield();
-        
-        local app = getApp();
-        local stats = get('enemy_defeat_stats');
-        
-        if stats ~= nil then
-            local regularCount = stats.regular_defeated or 0;
-            local alphaCount = stats.alpha_defeated or 0;
-            local totalCount = regularCount + alphaCount;
-            
-            local counterText = '👹 Enemies Defeated: ' .. totalCount;
-            
-            -- Position at top center of screen
-            local position = app.convertPercentToPosition(0.5, 0.05);
-            app.createChatBubble(position.x, position.y, 0.5, counterText);
-        end
-        
-        wait(0.5);
-    end
-end
-
 function onPlayerVictory(player, enemy, enemyData, combatResult)
     -- Base gold range: 3-6
     local baseGold = math.random(3, 6);
@@ -1029,24 +859,6 @@ function onPlayerVictory(player, enemy, enemyData, combatResult)
     local goldReward = baseGold + luckBonus;
     
     local success, newBalance = addCurrency(player, goldReward);
-
-    -- Reward a small potion on victory
-    if player ~= nil then
-        local inventory = ensureInventory(player);
-        if inventory ~= nil then
-            inventory.potion_small = (inventory.potion_small or 0) + 1;
-            player.saveUserData('rpg_inventory', inventory);
-            player.chatBubble('+1 Small Potion');
-        end
-    end
-    
-    -- Clear combat flag when player wins
-    if player ~= nil then
-        player.saveUserData('in_combat', false);
-    end
-    
-    -- Track enemy defeat
-    incrementEnemyDefeatCounter(enemyData);
     
     -- Play built-in death/respawn via explode for visual effect
     if enemy ~= nil then
@@ -1054,22 +866,22 @@ function onPlayerVictory(player, enemy, enemyData, combatResult)
     end
     
     -- Mark enemy as respawning to prevent re-engagement
-    local enemies = get('enemyUsers');
+    local enemies = get('dungeonEnemyUsers');
     if enemies ~= nil then
         for i, e in ipairs(enemies) do
             if e.enemyName == enemyData.enemyName then
                 e.isRespawning = true;
                 enemies[i] = e;
-                set('enemyUsers', enemies);
+                set('dungeonEnemyUsers', enemies);
                 break;
             end
         end
     end
     
     -- Start respawn timer in async to avoid blocking combat
-    set('respawn_enemy_index', enemyData.spawnPointIndex);
-    set('respawn_enemy_delay', enemyData.respawnTime);
-    set('respawn_enemy_name', enemyData.enemyName);
+    set('respawn_dungeon_enemy_index', enemyData.spawnPointIndex);
+    set('respawn_dungeon_enemy_delay', enemyData.respawnTime);
+    set('respawn_dungeon_enemy_name', enemyData.enemyName);
     async('respawnEnemyAfterDelay');
 end
 
@@ -1085,68 +897,63 @@ function onPlayerDefeat(player, enemy, enemyData, combatResult)
         player.setTemporaryAvatar('ghost', 60);
         
         -- Set 62 second cooldown (60 for ghost + 2 second grace period after returning)
-        player.saveUserData('player_combat_cooldown', os.time());
-        
-        -- Clear combat flag
-        player.saveUserData('in_combat', false);
+        player.saveUserData('dungeon_combat_cooldown', os.time());
     end
     
     -- Mark enemy as respawning (even though they won, prevent re-engagement for cooldown)
-    local enemies = get('enemyUsers');
+    local enemies = get('dungeonEnemyUsers');
     if enemies ~= nil then
         for i, e in ipairs(enemies) do
             if e.enemyName == enemyData.enemyName then
                 e.isRespawning = true;
                 e.lastCombatTime = os.time();
                 enemies[i] = e;
-                set('enemyUsers', enemies);
+                set('dungeonEnemyUsers', enemies);
                 break;
             end
         end
     end
     
     -- Brief respawn timer even on victory to prevent immediate re-engagement
-    set('respawn_enemy_index', enemyData.spawnPointIndex);
-    set('respawn_enemy_delay', 5); -- 5 second cooldown after defeating player
-    set('respawn_enemy_name', enemyData.enemyName);
+    set('respawn_dungeon_enemy_index', enemyData.spawnPointIndex);
+    set('respawn_dungeon_enemy_delay', 5); -- 5 second cooldown after defeating player
+    set('respawn_dungeon_enemy_name', enemyData.enemyName);
     async('respawnEnemyAfterDelay');
 end
 
 function onCombatDraw(player, enemy, enemyData, combatResult)
     if player ~= nil then
         runCommand('!explode ' .. player.displayName, true);
-        -- Clear combat flag on draw
-        player.saveUserData('in_combat', false);
     end
     if enemyData ~= nil and enemyData.enemyName ~= nil then
         runCommand('!explode ' .. enemyData.enemyName, true);
     end
     
     -- Mark enemy as respawning
-    local enemies = get('enemyUsers');
+    local enemies = get('dungeonEnemyUsers');
     if enemies ~= nil then
         for i, e in ipairs(enemies) do
             if e.enemyName == enemyData.enemyName then
                 e.isRespawning = true;
                 e.lastCombatTime = os.time();
                 enemies[i] = e;
-                set('enemyUsers', enemies);
+                set('dungeonEnemyUsers', enemies);
                 break;
             end
         end
     end
     
     -- Respawn both after draw
-    set('respawn_enemy_index', enemyData.spawnPointIndex);
-    set('respawn_enemy_delay', 10); -- 10 second cooldown after draw
-    set('respawn_enemy_name', enemyData.enemyName);
+    set('respawn_dungeon_enemy_index', enemyData.spawnPointIndex);
+    set('respawn_dungeon_enemy_delay', 10); -- 10 second cooldown after draw
+    set('respawn_dungeon_enemy_name', enemyData.enemyName);
     async('respawnEnemyAfterDelay');
 end
 
 function respawnEnemyAfterDelay()
-    local spawnIndex = get('respawn_enemy_index');
-    local delay = get('respawn_enemy_delay');
-    local enemyName = get('respawn_enemy_name');
+    local spawnIndex = get('respawn_dungeon_enemy_index');
+    local delay = get('respawn_dungeon_enemy_delay');
+    local enemyName = get('respawn_dungeon_enemy_name');
     
     if spawnIndex == nil or delay == nil then
         return;
@@ -1156,18 +963,18 @@ function respawnEnemyAfterDelay()
     
     -- Check if we're still on the correct background before respawning
     local currentBackground = getBackground();
-    if currentBackground ~= 'brothers_crossing' then
+    if currentBackground ~= 'dungeon_01' then
         return; -- Don't respawn if we switched backgrounds
     end
     
     -- Remove respawning flag and re-enable for combat
-    local enemies = get('enemyUsers');
+    local enemies = get('dungeonEnemyUsers');
     if enemies ~= nil then
         for i, e in ipairs(enemies) do
             if e.enemyName == enemyName then
                 e.isRespawning = false;
                 enemies[i] = e;
-                set('enemyUsers', enemies);
+                set('dungeonEnemyUsers', enemies);
                 break;
             end
         end
@@ -1189,23 +996,23 @@ end
 
 function despawnAllEnemies()
     -- Check if already despawning to prevent concurrent calls
-    local isCurrentlyDespawning = get('despawning_in_progress');
+    local isCurrentlyDespawning = get('dungeon_despawning_in_progress');
     if isCurrentlyDespawning then
         return; -- Already despawning, skip
     end
     
-    local enemies = get('enemyUsers');
+    local enemies = get('dungeonEnemyUsers');
     if enemies == nil or #enemies == 0 then
         return; -- Nothing to despawn
     end
     
     -- Set flag to prevent concurrent despawn operations
-    set('despawning_in_progress', true);
+    set('dungeon_despawning_in_progress', true);
     
     local app = getApp();
     
     -- Clear the enemy list first to prevent respawn timers from re-adding them
-    set('enemyUsers', {});
+    set('dungeonEnemyUsers', {});
     
     -- Delete the users completely
     for _, enemyData in ipairs(enemies) do
@@ -1216,40 +1023,40 @@ function despawnAllEnemies()
     end
     
     -- Clear the flag
-    set('despawning_in_progress', false);
+    set('dungeon_despawning_in_progress', false);
 end
 
 function spawnAllEnemies()
     -- Check if already spawning to prevent concurrent calls
-    local isCurrentlySpawning = get('spawning_in_progress');
+    local isCurrentlySpawning = get('dungeon_spawning_in_progress');
     if isCurrentlySpawning then
         return;
     end
     
     -- Check if enemies are already spawned
-    local enemies = get('enemyUsers');
+    local enemies = get('dungeonEnemyUsers');
     if enemies ~= nil and #enemies > 0 then
         return; -- Already spawned, don't spawn again
     end
     
     -- Set flag to prevent concurrent spawn operations
-    set('spawning_in_progress', true);
+    set('dungeon_spawning_in_progress', true);
     
     defineEnemySpawns();
     wait(1);
     
-    writeChat('👹 Enemy Spawner: Spawning enemies...');
+    writeChat('👹 Dungeon Enemy Spawner: Spawning enemies...');
     for i = 1, #enemySpawnPoints do
         spawnEnemyAt(i);
         wait(0.5);
     end
     
     -- Clear the flag
-    set('spawning_in_progress', false);
+    set('dungeon_spawning_in_progress', false);
 end
 
 function onBackgroundSwitch(user, backgroundName)
-    if backgroundName == 'brothers_crossing' then
+    if backgroundName == 'dungeon_01' then
         -- Correct background - spawn enemies if not already spawned
         spawnAllEnemies();
     else
@@ -1260,18 +1067,18 @@ end
 
 return function()
     -- Guard against re-initialization on background change
-    if get('enemy_spawner_initialized') then
+    if get('dungeon_01_spawner_initialized') then
         return;
     end
-    set('enemy_spawner_initialized', true);
+    set('dungeon_01_spawner_initialized', true);
     
-    writeChat('👹 Enemy Spawner: ONLINE');
+    writeChat('👹 Dungeon_01 Enemy Spawner: ONLINE');
     wait(0.1);
 
     -- Check if we're on the correct background
     local currentBackground = getBackground();
-    if currentBackground ~= 'brothers_crossing' then
-        writeChat('⚠️ Enemy Spawner: Wrong background (' .. currentBackground .. '). Enemies require brothers_crossing.');
+    if currentBackground ~= 'dungeon_01' then
+        writeChat('⚠️ Dungeon_01 Enemy Spawner: Wrong background (' .. currentBackground .. '). Enemies require dungeon_01.');
     else
         spawnAllEnemies();
     end

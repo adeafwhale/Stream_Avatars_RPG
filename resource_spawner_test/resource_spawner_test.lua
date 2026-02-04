@@ -175,8 +175,20 @@ function collectResourceWithDelay()
                 stone = 0,
                 ore = 0,
                 fiber = 0,
-                fish = 0
+                fish = 0,
+                potion_small = 0,
+                potion_medium = 0,
+                potion_large = 0
             };
+        else
+            if inventory.wood == nil then inventory.wood = 0 end
+            if inventory.stone == nil then inventory.stone = 0 end
+            if inventory.ore == nil then inventory.ore = 0 end
+            if inventory.fiber == nil then inventory.fiber = 0 end
+            if inventory.fish == nil then inventory.fish = 0 end
+            if inventory.potion_small == nil then inventory.potion_small = 0 end
+            if inventory.potion_medium == nil then inventory.potion_medium = 0 end
+            if inventory.potion_large == nil then inventory.potion_large = 0 end
         end
         
         inventory[resourceType] = inventory[resourceType] + 1;

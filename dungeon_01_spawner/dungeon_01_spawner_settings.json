@@ -1,0 +1,5 @@
+{
+  "name": "Dungeon_01 Enemy Spawner",
+  "description": "Spawns and manages enemies for the Dungeon_01 background",
+  "version": "1.0.0"
+}
