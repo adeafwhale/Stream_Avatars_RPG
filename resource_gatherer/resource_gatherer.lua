@@ -242,6 +242,12 @@ function checkProximityForHarvest()
                 if not isResourceUser(player) and not isEnemyUser(player) then
                     local playerPos = player.getPosition();
                     
+                    -- Check if player is in active combat
+                    local inCombat = player.loadUserData('in_combat');
+                    if inCombat == true then
+                        goto skip_player; -- Player in active combat, skip harvesting
+                    end
+                    
                     for i, resourceData in ipairs(resources) do
                         local resource = getUser(resourceData.resourceName);
                         
@@ -252,19 +258,32 @@ function checkProximityForHarvest()
                             end
                             
                             local resourcePos = resource.getPosition();
-                            
-                            -- Calculate distance
                             local dx = playerPos.x - resourcePos.x;
                             local dy = playerPos.y - resourcePos.y;
-                            local distance = math.sqrt(dx * dx + dy * dy);
                             
-                            local harvestRange = 100;
-                            if resourceData.type == 'ore' then
-                                harvestRange = 30;
+                            -- For wood, require close X-axis alignment (trunk center) but allow more Y distance
+                            -- For ore, use standard distance calculation
+                            local canHarvest = false;
+                            
+                            if resourceData.type == 'wood' then
+                                -- Must be within 30px horizontally (aligned with trunk) AND 100px vertically
+                                if math.abs(dx) < 30 and math.abs(dy) < 100 then
+                                    canHarvest = true;
+                                end
+                            elseif resourceData.type == 'ore' then
+                                local distance = math.sqrt(dx * dx + dy * dy);
+                                if distance < 30 then
+                                    canHarvest = true;
+                                end
+                            else
+                                local distance = math.sqrt(dx * dx + dy * dy);
+                                if distance < 100 then
+                                    canHarvest = true;
+                                end
                             end
 
                             -- If within range, start harvest
-                            if distance < harvestRange then
+                            if canHarvest then
                                 writeChat('🌲 Harvesting ' .. resourceData.type .. '...');
                                 
                                 -- Mark as respawning
@@ -281,6 +300,8 @@ function checkProximityForHarvest()
                         
                         ::continue::
                     end
+                    
+                    ::skip_player::
                 end
             end
             
@@ -302,6 +323,8 @@ function performHarvest(player, resourceData)
     -- Player plays animation based on resource type
     if resourceData.type == 'ore' then
         player.runCommand('!pick');
+    elseif resourceData.type == 'wood' then
+        player.runCommand('!chop');
     else
         player.runCommand('!swing');
     end

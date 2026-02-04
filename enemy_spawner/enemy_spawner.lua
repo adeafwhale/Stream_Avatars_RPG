@@ -238,6 +238,19 @@ function isEnemyUser(user)
     return false;
 end
 
+function isResourceUser(user)
+    if user == nil then
+        return false;
+    end
+
+    local tag = user.loadUserData('resource_tag');
+    if tag ~= nil and tag.isResource == true then
+        return true;
+    end
+
+    return false;
+end
+
 function checkCombatProximity()
     -- This runs continuously to check for combat
     while true do
@@ -250,8 +263,8 @@ function checkCombatProximity()
             local allUsers = getUsers();
             
             for _, player in ipairs(allUsers) do
-                -- Skip enemies (tagged users)
-                if not isEnemyUser(player) then
+                -- Skip enemies (tagged users) and resources
+                if not isEnemyUser(player) and not isResourceUser(player) then
                     local playerPos = player.getPosition();
                     
                     -- Check if player is on combat cooldown after losing/timing out
@@ -331,6 +344,9 @@ function checkCombatProximity()
 end
 
 function startCombat(player, enemy, enemyData)
+    -- Mark player as in combat
+    player.saveUserData('in_combat', true);
+    
     -- Get initial positions
     local playerPos = player.getPosition();
     local enemyPos = enemy.getPosition();
@@ -342,10 +358,6 @@ function startCombat(player, enemy, enemyData)
     -- Calculate target distance (90 pixels apart)
     local targetDistance = getAttackStandoffDistance();
     local dx = enemyPos.x - playerPos.x;
-    
-    -- Determine facing directions based on relative position
-    local playerFacing = (dx > 0) and 1 or -1;  -- Face right if enemy is to the right
-    local enemyFacing = -playerFacing;           -- Enemy faces opposite
     
     -- Calculate final positions with correct standoff distance
     local midX = (playerPos.x + enemyPos.x) / 2;
@@ -366,13 +378,20 @@ function startCombat(player, enemy, enemyData)
     player.setPosition(finalPlayerX, playerPos.y);
     enemy.setPosition(finalEnemyX, enemyPos.y);
     
-    wait(0.1);  -- Brief pause for positions to settle
+    wait(0.2);  -- Wait for positions to settle
     
-    -- Set facing directions ONCE
-    player.look(playerFacing);
-    enemy.look(enemyFacing);
+    -- Determine facing directions based on FINAL positions (after any swaps)
+    -- If enemy is to the right of player: player faces right (1), enemy faces left (-1)
+    -- If enemy is to the left of player: player faces left (-1), enemy faces right (1)
+    if finalEnemyX > finalPlayerX then
+        player.look(1);   -- Player faces right
+        enemy.look(-1);   -- Enemy faces left
+    else
+        player.look(-1);  -- Player faces left
+        enemy.look(1);    -- Enemy faces right
+    end
     
-    wait(0.1);  -- Brief pause for facing to settle
+    wait(0.2);  -- Wait for facing to settle
 
     local combatResult = runCombatBattle(player, enemy, enemyData);
     if combatResult == nil then
@@ -845,6 +864,48 @@ function getGearStatsForCombat(gearName)
     return stats;
 end
 
+function incrementEnemyDefeatCounter(enemyData)
+    -- Only count regular enemies (not alpha)
+    if enemyData.type == 'jakyl' then
+        local stats = get('enemy_defeat_stats');
+        if stats == nil then
+            stats = { regular_defeated = 0, alpha_defeated = 0 };
+        end
+        stats.regular_defeated = (stats.regular_defeated or 0) + 1;
+        set('enemy_defeat_stats', stats);
+    elseif enemyData.type == 'alpha_jakyl' then
+        local stats = get('enemy_defeat_stats');
+        if stats == nil then
+            stats = { regular_defeated = 0, alpha_defeated = 0 };
+        end
+        stats.alpha_defeated = (stats.alpha_defeated or 0) + 1;
+        set('enemy_defeat_stats', stats);
+    end
+end
+
+function displayEnemyDefeatCounter()
+    while true do
+        yield();
+        
+        local app = getApp();
+        local stats = get('enemy_defeat_stats');
+        
+        if stats ~= nil then
+            local regularCount = stats.regular_defeated or 0;
+            local alphaCount = stats.alpha_defeated or 0;
+            local totalCount = regularCount + alphaCount;
+            
+            local counterText = '👹 Enemies Defeated: ' .. totalCount;
+            
+            -- Position at top center of screen
+            local position = app.convertPercentToPosition(0.5, 0.05);
+            app.createChatBubble(position.x, position.y, 0.5, counterText);
+        end
+        
+        wait(0.5);
+    end
+end
+
 function onPlayerVictory(player, enemy, enemyData, combatResult)
     -- Base gold range: 3-6
     local baseGold = math.random(3, 6);
@@ -856,6 +917,14 @@ function onPlayerVictory(player, enemy, enemyData, combatResult)
     local goldReward = baseGold + luckBonus;
     
     local success, newBalance = addCurrency(player, goldReward);
+    
+    -- Clear combat flag when player wins
+    if player ~= nil then
+        player.saveUserData('in_combat', false);
+    end
+    
+    -- Track enemy defeat
+    incrementEnemyDefeatCounter(enemyData);
     
     -- Play built-in death/respawn via explode for visual effect
     if enemy ~= nil then
@@ -895,6 +964,9 @@ function onPlayerDefeat(player, enemy, enemyData, combatResult)
         
         -- Set 62 second cooldown (60 for ghost + 2 second grace period after returning)
         player.saveUserData('player_combat_cooldown', os.time());
+        
+        -- Clear combat flag
+        player.saveUserData('in_combat', false);
     end
     
     -- Mark enemy as respawning (even though they won, prevent re-engagement for cooldown)
@@ -921,6 +993,8 @@ end
 function onCombatDraw(player, enemy, enemyData, combatResult)
     if player ~= nil then
         runCommand('!explode ' .. player.displayName, true);
+        -- Clear combat flag on draw
+        player.saveUserData('in_combat', false);
     end
     if enemyData ~= nil and enemyData.enemyName ~= nil then
         runCommand('!explode ' .. enemyData.enemyName, true);
