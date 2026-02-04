@@ -17,7 +17,7 @@ function defineResourceSpawns()
         resourceName = 'Resource_Wood_1',
         x = screenWidth * 0.2,
         y = spawnY,
-        respawnTime = 30
+        respawnTime = 5
     });
     
     table.insert(points, {
@@ -25,15 +25,32 @@ function defineResourceSpawns()
         resourceName = 'Resource_Wood_2',
         x = screenWidth * 0.25,
         y = spawnY,
-        respawnTime = 30
+        respawnTime = 5
     });
     
-    --[[ DISABLED FOR TESTING
+    -- Ore spawns (right side)
+    table.insert(points, {
+        type = 'ore',
+        resourceName = 'Resource_Ore_1',
+        x = screenWidth * 0.85,
+        y = spawnY,
+        respawnTime = 8
+    });
+    
+    table.insert(points, {
+        type = 'ore',
+        resourceName = 'Resource_Ore_2',
+        x = screenWidth * 0.8,
+        y = spawnY,
+        respawnTime = 8
+    });
+    
+    --[[ DISABLED - Stone and Fiber
     -- Stone spawns (right side)
     table.insert(points, {
         type = 'stone',
         resourceName = 'Resource_Stone_1',
-        x = screenWidth * 0.8,
+        x = screenWidth * 0.75,
         y = spawnY,
         respawnTime = 45
     });
@@ -41,26 +58,9 @@ function defineResourceSpawns()
     table.insert(points, {
         type = 'stone',
         resourceName = 'Resource_Stone_2',
-        x = screenWidth * 0.75,
+        x = screenWidth * 0.7,
         y = spawnY,
         respawnTime = 45
-    });
-    
-    -- Ore spawns (top corners)
-    table.insert(points, {
-        type = 'ore',
-        resourceName = 'Resource_Ore_1',
-        x = screenWidth * 0.85,
-        y = spawnY,
-        respawnTime = 60
-    });
-    
-    table.insert(points, {
-        type = 'ore',
-        resourceName = 'Resource_Ore_2',
-        x = screenWidth * 0.15,
-        y = spawnY,
-        respawnTime = 60
     });
     
     -- Fiber spawns (bottom center)
@@ -162,6 +162,19 @@ function isResourceUser(user)
     return false;
 end
 
+function isEnemyUser(user)
+    if user == nil then
+        return false;
+    end
+
+    local tag = user.loadUserData('enemy_tag');
+    if tag ~= nil and tag.isEnemy == true then
+        return true;
+    end
+
+    return false;
+end
+
 function onResourceAvatarSpawned(user)
     if user == nil then
         return;
@@ -225,8 +238,8 @@ function checkProximityForHarvest()
             local allUsers = getUsers();
             
             for _, player in ipairs(allUsers) do
-                -- Skip resources (tagged users)
-                if not isResourceUser(player) then
+                -- Skip resources and enemies (tagged users)
+                if not isResourceUser(player) and not isEnemyUser(player) then
                     local playerPos = player.getPosition();
                     
                     for i, resourceData in ipairs(resources) do
@@ -245,8 +258,13 @@ function checkProximityForHarvest()
                             local dy = playerPos.y - resourcePos.y;
                             local distance = math.sqrt(dx * dx + dy * dy);
                             
-                            -- If within 100 pixels, start harvest
-                            if distance < 100 then
+                            local harvestRange = 100;
+                            if resourceData.type == 'ore' then
+                                harvestRange = 30;
+                            end
+
+                            -- If within range, start harvest
+                            if distance < harvestRange then
                                 writeChat('🌲 Harvesting ' .. resourceData.type .. '...');
                                 
                                 -- Mark as respawning
@@ -281,8 +299,12 @@ function performHarvest(player, resourceData)
         return;
     end
     
-    -- Player plays swing animation
-    player.runCommand('!swing');
+    -- Player plays animation based on resource type
+    if resourceData.type == 'ore' then
+        player.runCommand('!pick');
+    else
+        player.runCommand('!swing');
+    end
     
     -- Resource plays harvesting animation
     resource.runCommand('!harvesting');
@@ -311,7 +333,7 @@ function performHarvest(player, resourceData)
     -- Resource plays destroyed animation
     resource.runCommand('!destroyed');
     
-    wait(1);
+    wait(2);
     
     -- Move resource off-screen instead of deleting (prevents explode animation)
     resource.setPosition(-1000, -1000);
