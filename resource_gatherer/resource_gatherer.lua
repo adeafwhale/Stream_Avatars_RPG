@@ -175,6 +175,25 @@ function isEnemyUser(user)
     return false;
 end
 
+function hasToolEquipped(user)
+    if user == nil then
+        return false;
+    end
+
+    local equippedGear = user.getGear();
+    if equippedGear == nil then
+        return false;
+    end
+
+    for _, itemName in pairs(equippedGear) do
+        if type(itemName) == 'string' and string.find(itemName, 'tool_') ~= nil then
+            return true;
+        end
+    end
+
+    return false;
+end
+
 function onResourceAvatarSpawned(user)
     if user == nil then
         return;
@@ -246,6 +265,11 @@ function checkProximityForHarvest()
                     local inCombat = player.loadUserData('in_combat');
                     if inCombat == true then
                         goto skip_player; -- Player in active combat, skip harvesting
+                    end
+
+                    -- Require a tool to harvest resources
+                    if not hasToolEquipped(player) then
+                        goto skip_player; -- No tool equipped, skip harvesting
                     end
                     
                     for i, resourceData in ipairs(resources) do
