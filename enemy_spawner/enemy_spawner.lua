@@ -287,6 +287,12 @@ function checkCombatProximity()
                             local timeSinceCombat = currentTime - (enemyData.lastCombatTime or 0);
                             
                             if timeSinceCombat >= 5 then
+                                                                -- Check if player is currently harvesting
+                                                                local isHarvesting = player.loadUserData('is_harvesting');
+                                                                if isHarvesting == true then
+                                                                    goto continue; -- Don't initiate combat if player is harvesting
+                                                                end
+                                
                                 local enemyPos = enemy.getPosition();
                                 
                                 -- Calculate distance

@@ -344,6 +344,9 @@ function performHarvest(player, resourceData)
         return;
     end
     
+    -- Set harvesting flag to prevent combat initiation
+    player.saveUserData('is_harvesting', true);
+    
     -- Player plays animation based on resource type
     if resourceData.type == 'ore' then
         player.runCommand('!pick');
@@ -384,6 +387,9 @@ function performHarvest(player, resourceData)
     
     -- Move resource off-screen instead of deleting (prevents explode animation)
     resource.setPosition(-1000, -1000);
+    
+        -- Clear harvesting flag
+        player.saveUserData('is_harvesting', false);
     
     -- Start respawn timer
     set('respawn_resource_index', resourceData.spawnPointIndex);
