@@ -326,6 +326,14 @@ function checkCombatProximity()
                                 
                                 -- If within 90 pixels, start combat
                                 if distance < 90 then
+                                    -- Force facing direction before combat starts
+                                    if playerPos.x > enemyPos.x then
+                                        player.look(-1);
+                                        enemy.look(1);
+                                    else
+                                        player.look(1);
+                                        enemy.look(-1);
+                                    end
                                     -- Mark enemy as in combat IMMEDIATELY to prevent other players from engaging
                                     enemyData.isRespawning = true;
                                     enemyData.lastCombatTime = currentTime;
@@ -352,6 +360,11 @@ end
 function startCombat(player, enemy, enemyData)
     -- Mark player as in combat
     player.saveUserData('in_combat', true);
+
+    -- Force enemy to stop immediately before positioning
+    if enemy ~= nil then
+        enemy.runCommand('!stand');
+    end
     
     -- Get initial positions
     local playerPos = player.getPosition();
@@ -380,11 +393,12 @@ function startCombat(player, enemy, enemyData)
     player.runCommand('!idle');
     enemy.runCommand('!idle');
     
-    -- Set positions ONCE
+    -- Wait for enemy to naturally decelerate
+    wait(0.3);
+    
+    -- Force positions ONCE after deceleration
     player.setPosition(finalPlayerX, playerPos.y);
     enemy.setPosition(finalEnemyX, enemyPos.y);
-    
-    wait(0.2);  -- Wait for positions to settle
     
     -- Determine facing directions based on FINAL positions (after any swaps)
     -- If enemy is to the right of player: player faces right (1), enemy faces left (-1)
@@ -397,7 +411,7 @@ function startCombat(player, enemy, enemyData)
         enemy.look(1);    -- Enemy faces right
     end
     
-    wait(0.2);  -- Wait for facing to settle
+    wait(0.15);  -- Brief settling time
 
     local combatResult = runCombatBattle(player, enemy, enemyData);
     if combatResult == nil then
